@@ -1,6 +1,7 @@
 import 'dart:convert';
 import 'services/market_api.dart';
 import 'screens/login_screen.dart';
+import 'screens/home_screen.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart' show rootBundle;
 import 'package:http/http.dart' as http;
@@ -29,7 +30,7 @@ class MyApp extends StatelessWidget {
         useMaterial3: true,
       ),
       home: LoginScreen(
-        nextScreenBuilder: (_) => const StartScreen(),
+        nextScreenBuilder: (_) => const HomeScreen(),
       ),
     );
   }
@@ -77,32 +78,32 @@ const Map<String, ItemType> itemTypes = {
   'crate': ItemType(
     key: 'crate',
     label: 'Kiste',
-    assetPath: 'assets/crates.json',
+    assetPath: 'assets/data/crates.json',
   ),
   'sticker': ItemType(
     key: 'sticker',
     label: 'Sticker',
-    assetPath: 'assets/stickers.json',
+    assetPath: 'assets/data/stickers.json',
   ),
   'keychain': ItemType(
     key: 'keychain',
     label: 'Keychain/Charm',
-    assetPath: 'assets/keychains.json',
+    assetPath: 'assets/data/keychains.json',
   ),
   'patch': ItemType(
     key: 'patch',
     label: 'Patch',
-    assetPath: 'assets/patches.json',
+    assetPath: 'assets/data/patches.json',
   ),
   'graffiti': ItemType(
     key: 'graffiti',
     label: 'Graffiti',
-    assetPath: 'assets/graffiti.json',
+    assetPath: 'assets/data/graffiti.json',
   ),
   'agent': ItemType(
     key: 'agent',
     label: 'Agent',
-    assetPath: 'assets/agents.json',
+    assetPath: 'assets/data/agents.json',
   ),
 };
 

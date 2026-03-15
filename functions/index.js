@@ -126,12 +126,18 @@ exports.skinportPrice = onRequest(async (req, res) => {
       const params = new URLSearchParams({
         app_id: "730",
         currency,
-        tradable: "1",
       });
 
       const apiUrl = `https://api.skinport.com/v1/items?${params.toString()}`;
 
-      const apiResp = await axios.get(apiUrl, { timeout: 10000 });
+      const apiResp = await axios.get(apiUrl, {
+        timeout: 10000,
+        headers: {
+          "Accept-Encoding": "br, gzip, deflate",
+          "User-Agent": "Mozilla/5.0 (compatible; Skindex/1.0)",
+        },
+        decompress: true,
+      });
       const items = Array.isArray(apiResp.data) ? apiResp.data : [];
 
       cacheEntry = {
