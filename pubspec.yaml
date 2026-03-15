@@ -57,6 +57,7 @@ flutter:
   uses-material-design: true
 
   assets:
+    - assets/images/
     - assets/data/skins.json
     - assets/data/crates.json
     - assets/data/stickers.json
