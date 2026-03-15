@@ -2,9 +2,6 @@ import 'dart:convert';
 import 'package:http/http.dart' as http;
 
 class MarketApi {
-  static const String _steamPriceBase =
-      'https://europe-west1-skindex-97204.cloudfunctions.net/steamPrice';
-
   static const String _proxyImageBase =
       'https://europe-west1-skindex-97204.cloudfunctions.net/proxyImage';
 
@@ -42,39 +39,6 @@ class MarketApi {
     final q = Uri.encodeQueryComponent(marketHashName);
     final cur = Uri.encodeQueryComponent(currency.toUpperCase());
     return 'https://skinport.com/market/730?search=$q&currency=$cur';
-  }
-
-  /// Steam-Preis über Cloud Function
-  static Future<SteamPriceResult> fetchSteamPrice(
-    String marketHashName, {
-    int currency = 3,
-    String country = 'DE',
-  }) async {
-    final uri = Uri.parse(_steamPriceBase).replace(queryParameters: {
-      'market_hash_name': marketHashName,
-      'currency': currency.toString(),
-      'country': country,
-    });
-
-    final resp = await http.get(uri);
-
-    if (resp.statusCode != 200) {
-      return SteamPriceResult(
-        success: false,
-        error: 'HTTP ${resp.statusCode}: ${resp.body}',
-      );
-    }
-
-    final data = json.decode(resp.body) as Map<String, dynamic>;
-    final success = data['success'] == true;
-
-    return SteamPriceResult(
-      success: success,
-      lowestPrice: data['lowest_price']?.toString(),
-      medianPrice: data['median_price']?.toString(),
-      volumeRaw: data['volume']?.toString(),
-      error: success ? null : data['error']?.toString(),
-    );
   }
 
   /// Skinport-Preis über Cloud Function
@@ -122,34 +86,6 @@ class MarketApi {
       minPrice: _parseNum(obj['min_price']),
       maxPrice: _parseNum(obj['max_price']),
       suggestedPrice: _parseNum(obj['suggested_price']),
-    );
-  }
-}
-
-/// Ergebnis des Steam-Preis-Calls
-class SteamPriceResult {
-  final bool success;
-  final String? lowestPrice;
-  final String? medianPrice;
-  final String? volumeRaw;
-  final String? error; // <-- neu
-
-  SteamPriceResult({
-    required this.success,
-    this.lowestPrice,
-    this.medianPrice,
-    this.volumeRaw,
-    this.error,
-  });
-
-  factory SteamPriceResult.fromJson(Map<String, dynamic> json) {
-    final success = json['success'] == true;
-    return SteamPriceResult(
-      success: success,
-      lowestPrice: json['lowest_price'] as String?,
-      medianPrice: json['median_price'] as String?,
-      volumeRaw: json['volume'] as String?,
-      error: success ? null : json['error'] as String?,
     );
   }
 }
