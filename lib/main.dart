@@ -1,5 +1,6 @@
 import 'dart:convert';
 import 'services/market_api.dart';
+import 'screens/login_screen.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart' show rootBundle;
 import 'package:http/http.dart' as http;
@@ -27,7 +28,9 @@ class MyApp extends StatelessWidget {
         colorScheme: ColorScheme.fromSeed(seedColor: Colors.blueGrey),
         useMaterial3: true,
       ),
-      home: const StartScreen(),
+      home: LoginScreen(
+        nextScreenBuilder: (_) => const StartScreen(),
+      ),
     );
   }
 }
