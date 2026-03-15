@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import '../main.dart' as app;
 import '../services/market_api.dart';
+import 'item_detail_screen.dart';
 const Color _cardBg = Color(0xFF0C1A0C);
 const Color _green = Color(0xFF4ADE80);
 const Color _cardBorder = Color(0xFF1A3520);
@@ -286,7 +287,9 @@ class _ItemCard extends StatelessWidget {
     final imgUrl = item.image != null ? app.proxyImageUrl(item.image) : null;
 
     return GestureDetector(
-      onTap: () {}, // Detail screen — coming soon
+      onTap: () => Navigator.of(context).push(
+        MaterialPageRoute(builder: (_) => ItemDetailScreen(item: item)),
+      ),
       child: Container(
         decoration: BoxDecoration(
           color: _cardBg,
