@@ -35,3 +35,16 @@ jobs:
           firebaseServiceAccount: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
           channelId: live
           projectId: skindex-97204
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Install Functions dependencies
+        run: npm ci
+        working-directory: functions
+
+      - name: Deploy Cloud Functions
+        run: npx firebase-tools deploy --only functions --project skindex-97204 --token ${{ secrets.FIREBASE_TOKEN }}
+        working-directory: functions

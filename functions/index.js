@@ -31,58 +31,6 @@ function handleCors(req, res) {
   return false;
 }
 
-/**
- * GET /steamPrice?market_hash_name=...&currency=3&country=DE
- *
- * Wrappt Steam /market/priceoverview/
- */
-exports.steamPrice = onRequest(async (req, res) => {
-  if (handleCors(req, res)) return;
-
-  if (req.method !== "GET") {
-    res.status(405).json({ error: "Use GET" });
-    return;
-  }
-
-  const marketHashName = req.query.market_hash_name;
-  if (!marketHashName) {
-    res.status(400).json({ error: "Missing market_hash_name" });
-    return;
-  }
-
-  const currency = req.query.currency || "3"; // 3 = EUR
-  const country = req.query.country || "DE";
-
-  try {
-    const response = await axios.get(
-      "https://steamcommunity.com/market/priceoverview/",
-      {
-        params: {
-          appid: 730,
-          currency,
-          market_hash_name: marketHashName,
-          country,
-          language: "german",
-        },
-        headers: {
-          "User-Agent":
-            "Mozilla/5.0 (compatible; Skindex/1.0; +https://example.com)",
-          Referer: "https://steamcommunity.com/market/",
-          Accept: "application/json,text/javascript,*/*;q=0.01",
-        },
-        timeout: 10000,
-      }
-    );
-
-    res.json(response.data);
-  } catch (err) {
-    logger.error("Error fetching Steam price", err);
-    res.status(500).json({
-      success: false,
-      error: String(err),
-    });
-  }
-});
 
 /**
  * GET /proxyImage?url=...

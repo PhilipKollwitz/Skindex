@@ -26,41 +26,11 @@ class ItemDetailPage extends StatefulWidget {
 }
 
 class _ItemDetailPageState extends State<ItemDetailPage> {
-  SteamPriceResult? _steamPrice;
-  String? _steamError;
-  bool _loadingSteam = false;
-
   SkinportItem? _skinport;
   String? _skinportError;
   bool _loadingSkinport = false;
 
   // ---------- Steam ----------
-
-  Future<void> _loadSteamPrice() async {
-    setState(() {
-      _loadingSteam = true;
-      _steamError = null;
-    });
-
-    try {
-      final result = await MarketApi.fetchSteamPrice(
-        widget.item.marketHashName,
-        currency: 3, // EUR
-        country: 'DE',
-      );
-      setState(() {
-        _steamPrice = result;
-      });
-    } catch (e) {
-      setState(() {
-        _steamError = e.toString();
-      });
-    } finally {
-      if (mounted) {
-        setState(() => _loadingSteam = false);
-      }
-    }
-  }
 
   Future<void> _openSteamListing() async {
     // marketHashName ist nicht-nullbar -> kein "??" nötig
@@ -173,40 +143,6 @@ class _ItemDetailPageState extends State<ItemDetailPage> {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     // ----- Steam -----
-                    const Text(
-                      'Steam Preis',
-                      style:
-                          TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
-                    ),
-                    const SizedBox(height: 8),
-                    if (_loadingSteam)
-                      const CircularProgressIndicator()
-                    else if (_steamError != null)
-                      Text(
-                        _steamError!,
-                        style: const TextStyle(color: Colors.red),
-                      )
-                    else if (_steamPrice != null)
-                      Text(
-                        'Lowest: ${_steamPrice!.lowestPrice ?? "-"}\n'
-                        'Median: ${_steamPrice!.medianPrice ?? "-"}\n'
-                        'Volume: ${_steamPrice!.volumeRaw ?? "-"}',
-                      )
-                    else
-                      const Text('(noch nicht abgefragt)'),
-                    const SizedBox(height: 8),
-                    ElevatedButton(
-                      onPressed: _loadingSteam ? null : _loadSteamPrice,
-                      child: _loadingSteam
-                          ? const SizedBox(
-                              width: 20,
-                              height: 20,
-                              child:
-                                  CircularProgressIndicator(strokeWidth: 2),
-                            )
-                          : const Text('Steam Preis anzeigen'),
-                    ),
-                    const SizedBox(height: 4),
                     OutlinedButton(
                       onPressed: _openSteamListing,
                       child: const Text('Steam Listing im Browser öffnen'),

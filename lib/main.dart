@@ -34,15 +34,12 @@ class MyApp extends StatelessWidget {
 
 /// Steam / Market Konfiguration
 const int steamAppId = 730;
-const String steamPriceOverviewUrl =
-    'https://steamcommunity.com/market/priceoverview/';
 const String steamListingBase =
     'https://steamcommunity.com/market/listings/730/';
 
 /// Firebase Cloud Functions (Proxy + Aggregator)
 const String cloudFunctionsBase =
     'https://europe-west1-skindex-97204.cloudfunctions.net';
-const String steamPriceFunctionUrl = '$cloudFunctionsBase/steamPrice';
 const String skinportPriceFunctionUrl = '$cloudFunctionsBase/skinportPrice';
 const String proxyImageFunctionUrl = '$cloudFunctionsBase/proxyImage';
 const String functionsBaseUrl =
@@ -249,54 +246,6 @@ String proxyImageUrl(String? rawUrl) {
   if (rawUrl == null || rawUrl.isEmpty) return '';
   final encoded = Uri.encodeComponent(rawUrl);
   return '$proxyImageFunctionUrl?url=$encoded';
-}
-
-/// Steam priceoverview holen – jetzt über Firebase Function `steamPrice`
-/// ACHTUNG: nutzt die gleiche `SteamPriceResult`-Klasse wie in market_api.dart
-Future<SteamPriceResult> fetchSteamPrice(
-  String marketHashName, {
-  int currency = 3,
-  String country = 'DE',
-}) async {
-  final uri = Uri.parse(steamPriceFunctionUrl).replace(queryParameters: {
-    'market_hash_name': marketHashName,
-    'currency': currency.toString(),
-    'country': country,
-  });
-
-  final res =
-      await http.get(uri).timeout(const Duration(seconds: 15));
-
-  if (res.statusCode != 200) {
-    return SteamPriceResult(
-      success: false,
-      error: 'HTTP ${res.statusCode}: ${res.reasonPhrase}',
-    );
-  }
-
-  final dynamic data = jsonDecode(res.body);
-  if (data is! Map) {
-    return SteamPriceResult(
-      success: false,
-      error: 'Ungültige Antwort von steamPrice Function',
-    );
-  }
-
-  final success = data['success'] == true;
-  if (!success) {
-    return SteamPriceResult(
-      success: false,
-      error: (data['error'] ?? 'Steam liefert keine Daten').toString(),
-    );
-  }
-
-  return SteamPriceResult(
-    success: true,
-    lowestPrice: data['lowest_price']?.toString(),
-    medianPrice: data['median_price']?.toString(),
-    // WICHTIG: Feldname wie in `market_api.dart`
-    volumeRaw: data['volume']?.toString(),
-  );
 }
 
 /// Skinport-Preis über Firebase Function `skinportPrice`
@@ -877,11 +826,6 @@ class ItemDetailScreen extends StatefulWidget {
 }
 
 class _ItemDetailScreenState extends State<ItemDetailScreen> {
-  // Steam
-  SteamPriceResult? _steamPrice;
-  String? _steamError;
-  bool _loadingSteam = false;
-
   // Skinport
   SkinportItem? _skinport;
   String? _skinportError;
@@ -900,37 +844,6 @@ class _ItemDetailScreenState extends State<ItemDetailScreen> {
       );
 
   // ---------- Steam ----------
-
-  Future<void> _loadSteamPrice() async {
-    setState(() {
-      _loadingSteam = true;
-      _steamError = null;
-    });
-
-    try {
-      final currencyLabel = widget.currencyNotifier.value;
-      final currencyCode = currencyMap[currencyLabel] ?? 3;
-
-      final result = await MarketApi.fetchSteamPrice(
-        _marketHashName,
-        currency: currencyCode,
-        country: 'DE',
-      );
-
-      if (!mounted) return;
-      setState(() {
-        _steamPrice = result;
-      });
-    } catch (e) {
-      if (!mounted) return;
-      setState(() {
-        _steamError = e.toString();
-      });
-    } finally {
-      if (!mounted) return;
-      setState(() => _loadingSteam = false);
-    }
-  }
 
   Future<void> _openSteamListing() async {
     final uri = Uri.parse(_steamListingUrl);
@@ -1033,52 +946,6 @@ class _ItemDetailScreenState extends State<ItemDetailScreen> {
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.stretch,
                       children: [
-                        const Text(
-                          'Steam Preis',
-                          style: TextStyle(
-                            fontSize: 16,
-                            fontWeight: FontWeight.bold,
-                          ),
-                        ),
-                        const SizedBox(height: 8),
-                        Expanded(
-                          child: SingleChildScrollView(
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                if (_loadingSteam)
-                                  const CircularProgressIndicator()
-                                else if (_steamError != null)
-                                  Text(
-                                    _steamError!,
-                                    style:
-                                        const TextStyle(color: Colors.red),
-                                  )
-                                else if (_steamPrice != null)
-                                  Text(
-                                    'Lowest:  ${_steamPrice!.lowestPrice ?? "—"}\n'
-                                    'Median:  ${_steamPrice!.medianPrice ?? "—"}\n'
-                                    'Volume:  ${_steamPrice!.volumeRaw ?? "—"}',
-                                  )
-                                else
-                                  const Text('(noch nicht abgefragt)'),
-                              ],
-                            ),
-                          ),
-                        ),
-                        const SizedBox(height: 8),
-                        ElevatedButton(
-                          onPressed: _loadingSteam ? null : _loadSteamPrice,
-                          child: _loadingSteam
-                              ? const SizedBox(
-                                  width: 20,
-                                  height: 20,
-                                  child: CircularProgressIndicator(
-                                      strokeWidth: 2),
-                                )
-                              : const Text('Steam Preis anzeigen'),
-                        ),
-                        const SizedBox(height: 4),
                         OutlinedButton(
                           onPressed: _openSteamListing,
                           child: const Text(
