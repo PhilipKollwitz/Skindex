@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 import '../main.dart' show Item, fetchSkinportPrice, SkinportPriceResult, buildMarketHashName, proxyImageUrl;
+import '../services/portfolio_storage.dart';
+import 'portfolio_screen.dart';
 
 // ── Theme colors
 const Color _bg = Color(0xFF060E06);
@@ -35,6 +37,7 @@ class _InventoryListScreenState extends State<InventoryListScreen> {
   double _totalValue = 0;
   double _initialTotal = 0;
   bool _initialSet = false;
+  Map<String, double> _initialPrices = {};
   String _searchQuery = '';
   bool _showSearch = false;
   final TextEditingController _searchController = TextEditingController();
@@ -53,6 +56,18 @@ class _InventoryListScreenState extends State<InventoryListScreen> {
 
   Future<void> _fetchPrices() async {
     setState(() => _loadingPrices = true);
+
+    // Bereits gespeicherte Initial-Preise laden
+    final savedInitial =
+        await PortfolioStorage.loadInitialPrices(widget.steamId);
+    if (savedInitial != null && mounted) {
+      setState(() {
+        _initialPrices = savedInitial;
+        _initialTotal = savedInitial.values.fold(0, (s, v) => s + v);
+        _initialSet = true;
+      });
+    }
+
     for (final item in widget.items) {
       if (!mounted) return;
       final hash = buildMarketHashName(item);
@@ -69,11 +84,27 @@ class _InventoryListScreenState extends State<InventoryListScreen> {
     }
     if (!mounted) return;
     final total = _calcTotal();
+
+    // Initial-Snapshot speichern (nur beim allerersten Mal)
+    final currentPriceMap = <String, double>{};
+    for (final item in widget.items) {
+      final hash = buildMarketHashName(item);
+      final price = _prices[hash]?.suggestedPrice;
+      if (price != null) currentPriceMap[hash] = price;
+    }
+    await PortfolioStorage.saveInitialIfAbsent(widget.steamId, currentPriceMap);
+    await PortfolioStorage.appendValueHistory(widget.steamId, total);
+
+    // Initial-Preise neu laden falls gerade erstmalig gespeichert
+    final init = await PortfolioStorage.loadInitialPrices(widget.steamId);
+
+    if (!mounted) return;
     setState(() {
       _totalValue = total;
       _loadingPrices = false;
-      if (!_initialSet) {
-        _initialTotal = total;
+      if (init != null) {
+        _initialPrices = init;
+        _initialTotal = init.values.fold(0, (s, v) => s + v);
         _initialSet = true;
       }
     });
@@ -195,94 +226,108 @@ class _InventoryListScreenState extends State<InventoryListScreen> {
 
           const SizedBox(height: 12),
 
-          // ── Value Card
+          // ── Value Card (tippbar → Portfolio Screen)
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: 12),
-            child: Container(
-              width: double.infinity,
-              padding: const EdgeInsets.all(20),
-              decoration: BoxDecoration(
-                color: _valueBg,
-                borderRadius: BorderRadius.circular(18),
-                border: Border.all(color: _green.withAlpha(100), width: 1.5),
-              ),
-              child: Row(
-                crossAxisAlignment: CrossAxisAlignment.end,
-                children: [
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        const Text(
-                          'Geschätzter Inventarwert',
-                          style: TextStyle(
-                            color: _green,
-                            fontSize: 13,
-                            fontWeight: FontWeight.w600,
+            child: GestureDetector(
+              onTap: _initialSet
+                  ? () => Navigator.of(context).push(
+                        MaterialPageRoute(
+                          builder: (_) => PortfolioScreen(
+                            steamId: widget.steamId,
+                            items: widget.items,
+                            currentPrices: _prices,
+                            initialPrices: _initialPrices,
                           ),
                         ),
-                        const SizedBox(height: 6),
-                        _loadingPrices && _totalValue == 0
-                            ? const SizedBox(
-                                height: 36,
-                                child: Align(
-                                  alignment: Alignment.centerLeft,
-                                  child: SizedBox(
-                                    width: 20,
-                                    height: 20,
-                                    child: CircularProgressIndicator(
-                                      strokeWidth: 2,
-                                      color: _green,
-                                    ),
-                                  ),
-                                ),
-                              )
-                            : Text(
-                                '\$${_totalValue.toStringAsFixed(2)}',
-                                style: const TextStyle(
-                                  color: Colors.white,
-                                  fontSize: 32,
-                                  fontWeight: FontWeight.bold,
-                                  height: 1.1,
-                                ),
-                              ),
-                      ],
-                    ),
-                  ),
-                  if (_initialSet)
-                    Container(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 12,
-                        vertical: 6,
-                      ),
-                      decoration: BoxDecoration(
-                        color: const Color(0xFF0D3A18),
-                        borderRadius: BorderRadius.circular(20),
-                        border: Border.all(color: _green.withAlpha(80)),
-                      ),
-                      child: Row(
-                        mainAxisSize: MainAxisSize.min,
+                      )
+                  : null,
+              child: Container(
+                width: double.infinity,
+                padding: const EdgeInsets.all(20),
+                decoration: BoxDecoration(
+                  color: _valueBg,
+                  borderRadius: BorderRadius.circular(18),
+                  border: Border.all(color: _green.withAlpha(100), width: 1.5),
+                ),
+                child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.end,
+                  children: [
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          Icon(
-                            isPositive
-                                ? Icons.trending_up_rounded
-                                : Icons.trending_down_rounded,
-                            color: _green,
-                            size: 16,
-                          ),
-                          const SizedBox(width: 4),
-                          Text(
-                            '${isPositive ? '+' : ''}${changePercent.toStringAsFixed(1)}%',
-                            style: const TextStyle(
+                          const Text(
+                            'Geschätzter Inventarwert',
+                            style: TextStyle(
                               color: _green,
                               fontSize: 13,
-                              fontWeight: FontWeight.w700,
+                              fontWeight: FontWeight.w600,
                             ),
                           ),
+                          const SizedBox(height: 6),
+                          _loadingPrices && _totalValue == 0
+                              ? const SizedBox(
+                                  height: 36,
+                                  child: Align(
+                                    alignment: Alignment.centerLeft,
+                                    child: SizedBox(
+                                      width: 20,
+                                      height: 20,
+                                      child: CircularProgressIndicator(
+                                        strokeWidth: 2,
+                                        color: _green,
+                                      ),
+                                    ),
+                                  ),
+                                )
+                              : Text(
+                                  '\$${_totalValue.toStringAsFixed(2)}',
+                                  style: const TextStyle(
+                                    color: Colors.white,
+                                    fontSize: 32,
+                                    fontWeight: FontWeight.bold,
+                                    height: 1.1,
+                                  ),
+                                ),
                         ],
                       ),
                     ),
-                ],
+                    if (_initialSet)
+                      Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 12,
+                          vertical: 6,
+                        ),
+                        decoration: BoxDecoration(
+                          color: const Color(0xFF0D3A18),
+                          borderRadius: BorderRadius.circular(20),
+                          border: Border.all(color: _green.withAlpha(80)),
+                        ),
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Icon(
+                              isPositive
+                                  ? Icons.trending_up_rounded
+                                  : Icons.trending_down_rounded,
+                              color: _green,
+                              size: 16,
+                            ),
+                            const SizedBox(width: 4),
+                            Text(
+                              '${isPositive ? '+' : ''}${changePercent.toStringAsFixed(1)}%',
+                              style: const TextStyle(
+                                color: _green,
+                                fontSize: 13,
+                                fontWeight: FontWeight.w700,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                  ],
+                ),
               ),
             ),
           ),
