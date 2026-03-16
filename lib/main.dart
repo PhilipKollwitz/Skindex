@@ -116,6 +116,8 @@ class Item {
   final List<String> wears;
   final String typeKey;
   final int amount; // im Inventar evtl. > 1
+  final String? rarityColor;  // Hex-Farbe aus Steam-Tags, z.B. "eb4b4b"
+  final String? rarityName;   // Lokalisierter Rarityname, z.B. "Covert"
 
   Item({
     required this.id,
@@ -125,6 +127,8 @@ class Item {
     this.marketHashName,
     this.wears = const [],
     this.amount = 1,
+    this.rarityColor,
+    this.rarityName,
   });
 
   /// Für lokale JSON-Dateien (skins.json, crates.json, …)
@@ -164,6 +168,8 @@ class Item {
       amount: (json['amount'] is int)
           ? json['amount'] as int
           : int.tryParse(json['amount'].toString()) ?? 1,
+      rarityColor: json['rarity_color']?.toString(),
+      rarityName: json['rarity_name']?.toString(),
     );
   }
 }
@@ -368,11 +374,27 @@ Future<List<Item>> fetchCsInventory(String steamId64,
       final marketHashName =
           (d['market_hash_name'] ?? d['market_name'] ?? name).toString();
 
+      // Rarity aus Tags extrahieren
+      String? rarityColor;
+      String? rarityName;
+      final tags = d['tags'];
+      if (tags is List) {
+        for (final t in tags) {
+          if (t is Map && t['category'] == 'Rarity') {
+            rarityColor = t['color']?.toString();
+            rarityName = t['localized_tag_name']?.toString();
+            break;
+          }
+        }
+      }
+
       items.add({
         'name': name,
         'market_hash_name': marketHashName,
         'image': imgUrl,
         'amount': a['amount'] ?? 1,
+        'rarity_color': rarityColor,
+        'rarity_name': rarityName,
       });
     }
 
