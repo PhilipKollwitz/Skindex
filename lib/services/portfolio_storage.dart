@@ -1,5 +1,5 @@
-import 'dart:convert';
-import 'package:shared_preferences/shared_preferences.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
+import '../main.dart' show Item, buildMarketHashName;
 
 /// Ein gespeicherter Wertpunkt für den Graph
 class ValueSnapshot {
@@ -7,99 +7,120 @@ class ValueSnapshot {
   final double totalValue;
 
   ValueSnapshot({required this.timestamp, required this.totalValue});
-
-  Map<String, dynamic> toJson() => {
-        'ts': timestamp.millisecondsSinceEpoch,
-        'v': totalValue,
-      };
-
-  factory ValueSnapshot.fromJson(Map<String, dynamic> j) => ValueSnapshot(
-        timestamp: DateTime.fromMillisecondsSinceEpoch(j['ts'] as int),
-        totalValue: (j['v'] as num).toDouble(),
-      );
 }
 
-/// Persistierung des Portfolio-Zustands mit SharedPreferences
+/// Firestore-Persistierung des Portfolio-Zustands.
+///
+/// Struktur:
+///   steamProfiles/{steamId}            → Profil + initialPrices
+///   portfolioHistory/{steamId}/snapshots/{YYYY-MM-DD}  → täglicher Snapshot
 class PortfolioStorage {
-  static String _snapshotKey(String steamId) => 'portfolio_init_$steamId';
-  static String _historyKey(String steamId) => 'portfolio_history_$steamId';
+  static final _db = FirebaseFirestore.instance;
 
-  // ─── Initial-Snapshot (Preise beim ersten Einlesen) ─────────────────────
+  // ─── Steam-Profil (Items für den Cron-Job) ───────────────────────────────
 
-  /// Speichert die initialen Item-Preise, sofern noch kein Snapshot vorhanden.
-  /// Gibt true zurück wenn gespeichert wurde (erster Aufruf), sonst false.
+  /// Speichert das Steam-Profil inkl. Items in Firestore (für den Cron-Job).
+  static Future<void> saveSteamProfile(
+    String steamId,
+    List<Item> items,
+  ) async {
+    await _db.collection('steamProfiles').doc(steamId).set({
+      'steamId': steamId,
+      'items': items
+          .map((item) => {
+                'marketHashName': buildMarketHashName(item),
+                'name': item.name,
+                'image': item.image,
+                'amount': item.amount,
+                'rarityColor': item.rarityColor,
+                'rarityName': item.rarityName,
+              })
+          .toList(),
+      'updatedAt': FieldValue.serverTimestamp(),
+    }, SetOptions(merge: true));
+  }
+
+  // ─── Initial-Snapshot ────────────────────────────────────────────────────
+
+  /// Speichert die initialen Item-Preise, sofern noch keiner vorhanden.
+  /// Gibt true zurück wenn erstmalig gespeichert.
   static Future<bool> saveInitialIfAbsent(
     String steamId,
     Map<String, double> prices,
   ) async {
-    final prefs = await SharedPreferences.getInstance();
-    final key = _snapshotKey(steamId);
-    if (prefs.containsKey(key)) return false; // Bereits vorhanden
-    final encoded = jsonEncode(prices.map((k, v) => MapEntry(k, v)));
-    await prefs.setString(key, encoded);
+    final ref = _db.collection('steamProfiles').doc(steamId);
+    final doc = await ref.get();
+
+    if (doc.exists && (doc.data()?['initialPrices'] as Map?)?.isNotEmpty == true) {
+      return false;
+    }
+
+    await ref.set({
+      'initialPrices': prices,
+      'createdAt': FieldValue.serverTimestamp(),
+    }, SetOptions(merge: true));
     return true;
   }
 
-  /// Lädt die initialen Item-Preise. Gibt null zurück wenn noch keiner vorhanden.
-  static Future<Map<String, double>?> loadInitialPrices(
-      String steamId) async {
-    final prefs = await SharedPreferences.getInstance();
-    final raw = prefs.getString(_snapshotKey(steamId));
-    if (raw == null) return null;
-    final Map<String, dynamic> decoded = jsonDecode(raw);
-    return decoded.map((k, v) => MapEntry(k, (v as num).toDouble()));
-  }
-
-  /// Löscht den Initial-Snapshot (z.B. beim Reset des Inventars).
-  static Future<void> clearSnapshot(String steamId) async {
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.remove(_snapshotKey(steamId));
-    await prefs.remove(_historyKey(steamId));
-  }
-
-  // ─── Wert-History für den Graph ─────────────────────────────────────────
-
-  /// Fügt einen neuen Wertpunkt zur History hinzu.
-  /// Doppelte Punkte im selben 30-Minuten-Fenster werden ignoriert.
-  static Future<void> appendValueHistory(
-      String steamId, double totalValue) async {
-    if (totalValue <= 0) return;
-    final prefs = await SharedPreferences.getInstance();
-    final key = _historyKey(steamId);
-    final history = await loadValueHistory(steamId);
-
-    // Duplikat-Schutz: letzten Punkt nicht öfter als alle 30 min schreiben
-    if (history.isNotEmpty) {
-      final last = history.last;
-      final diff = DateTime.now().difference(last.timestamp);
-      if (diff.inMinutes < 30) {
-        // Wert updaten statt neuen Punkt anlegen
-        history[history.length - 1] =
-            ValueSnapshot(timestamp: last.timestamp, totalValue: totalValue);
-        await prefs.setString(
-            key, jsonEncode(history.map((s) => s.toJson()).toList()));
-        return;
-      }
+  /// Lädt die initialen Item-Preise aus Firestore.
+  static Future<Map<String, double>?> loadInitialPrices(String steamId) async {
+    try {
+      final doc =
+          await _db.collection('steamProfiles').doc(steamId).get();
+      if (!doc.exists) return null;
+      final raw = doc.data()?['initialPrices'] as Map<String, dynamic>?;
+      if (raw == null || raw.isEmpty) return null;
+      return raw.map((k, v) => MapEntry(k, (v as num).toDouble()));
+    } catch (_) {
+      return null;
     }
-
-    history.add(
-        ValueSnapshot(timestamp: DateTime.now(), totalValue: totalValue));
-
-    // Maximal 1000 Punkte behalten
-    final trimmed =
-        history.length > 1000 ? history.sublist(history.length - 1000) : history;
-    await prefs.setString(
-        key, jsonEncode(trimmed.map((s) => s.toJson()).toList()));
   }
 
-  /// Lädt die gesamte Wert-History.
+  // ─── Wert-History für den Graph ──────────────────────────────────────────
+
+  /// Speichert einen Tages-Snapshot (idempotent, überschreibt gleichen Tag).
+  static Future<void> appendValueHistory(
+    String steamId,
+    double totalValue,
+  ) async {
+    if (totalValue <= 0) return;
+    final today = DateTime.now().toIso8601String().substring(0, 10);
+    await _db
+        .collection('portfolioHistory')
+        .doc(steamId)
+        .collection('snapshots')
+        .doc(today)
+        .set({
+      'timestamp': FieldValue.serverTimestamp(),
+      'totalValue': totalValue,
+    });
+  }
+
+  /// Lädt alle gespeicherten Wert-Snapshots chronologisch.
   static Future<List<ValueSnapshot>> loadValueHistory(String steamId) async {
-    final prefs = await SharedPreferences.getInstance();
-    final raw = prefs.getString(_historyKey(steamId));
-    if (raw == null) return [];
-    final List<dynamic> decoded = jsonDecode(raw);
-    return decoded
-        .map((e) => ValueSnapshot.fromJson(e as Map<String, dynamic>))
-        .toList();
+    try {
+      final snap = await _db
+          .collection('portfolioHistory')
+          .doc(steamId)
+          .collection('snapshots')
+          .orderBy('timestamp')
+          .get();
+
+      return snap.docs.map((doc) {
+        final data = doc.data();
+        final ts = data['timestamp'] as Timestamp?;
+        return ValueSnapshot(
+          timestamp: ts?.toDate() ?? DateTime.now(),
+          totalValue: (data['totalValue'] as num).toDouble(),
+        );
+      }).toList();
+    } catch (_) {
+      return [];
+    }
+  }
+
+  /// Löscht das Profil (beim Inventar-Reset).
+  static Future<void> clearProfile(String steamId) async {
+    await _db.collection('steamProfiles').doc(steamId).delete();
   }
 }
