@@ -4,8 +4,13 @@
 
 const { setGlobalOptions } = require("firebase-functions/v2/options");
 const { onRequest } = require("firebase-functions/v2/https");
+const { onSchedule } = require("firebase-functions/v2/scheduler");
 const logger = require("firebase-functions/logger");
 const axios = require("axios");
+const { initializeApp, getApps } = require("firebase-admin/app");
+const { getFirestore, FieldValue } = require("firebase-admin/firestore");
+
+if (getApps().length === 0) initializeApp();
 const SKINPORT_CACHE_MS = 5 * 60 * 1000; // 5 Minuten
 const skinportCache = {};
 
@@ -169,6 +174,84 @@ exports.skinportPrice = onRequest(async (req, res) => {
     res.status(500).json({ error: "skinportPrice internal error" });
   }
 });
+/**
+ * Täglicher Cron-Job (06:00 UTC): Skinport-Preise für alle registrierten
+ * Steam-Profile abrufen und als Portfolio-Snapshot in Firestore speichern.
+ */
+exports.dailyPortfolioSnapshot = onSchedule(
+  { schedule: "0 6 * * *", region: "europe-west1", timeZone: "UTC" },
+  async () => {
+    const db = getFirestore();
+
+    // 1. Alle Skinport-Preise auf einmal holen (Bulk-API, kein API-Key nötig)
+    const priceMap = {};
+    try {
+      const response = await axios.get("https://api.skinport.com/v1/items", {
+        params: { app_id: "730", currency: "EUR" },
+        timeout: 30000,
+        headers: {
+          "Accept-Encoding": "br, gzip, deflate",
+          "User-Agent": "Mozilla/5.0 (compatible; Skindex/1.0)",
+        },
+        decompress: true,
+      });
+      if (Array.isArray(response.data)) {
+        for (const item of response.data) {
+          if (item.market_hash_name && item.suggested_price != null) {
+            priceMap[item.market_hash_name] = item.suggested_price;
+          }
+        }
+      }
+      logger.info(`Skinport: ${Object.keys(priceMap).length} Preise geladen.`);
+    } catch (e) {
+      logger.error("Skinport Bulk-Fetch fehlgeschlagen:", e.message);
+      return;
+    }
+
+    // 2. Alle Steam-Profile aus Firestore laden
+    const profiles = await db.collection("steamProfiles").get();
+    if (profiles.empty) {
+      logger.info("Keine Steam-Profile vorhanden.");
+      return;
+    }
+
+    // 3. Für jedes Profil Gesamtwert berechnen + Snapshot speichern
+    const today = new Date().toISOString().substring(0, 10); // YYYY-MM-DD
+    const batch = db.batch();
+    let count = 0;
+
+    for (const doc of profiles.docs) {
+      const { items = [] } = doc.data();
+      const steamId = doc.id;
+      let totalValue = 0;
+
+      for (const item of items) {
+        const price = priceMap[item.marketHashName];
+        if (price != null) {
+          totalValue += price * (item.amount || 1);
+        }
+      }
+
+      if (totalValue > 0) {
+        const ref = db
+          .collection("portfolioHistory")
+          .doc(steamId)
+          .collection("snapshots")
+          .doc(today);
+
+        batch.set(ref, {
+          timestamp: FieldValue.serverTimestamp(),
+          totalValue,
+        });
+        count++;
+      }
+    }
+
+    await batch.commit();
+    logger.info(`Snapshots gespeichert für ${count}/${profiles.size} Profile.`);
+  }
+);
+
 // Proxy für das CS2-Inventar (App 730, Context 2)
 exports.steamInventory = onRequest(async (req, res) => {
   // CORS erlauben (für Flutter Web)
