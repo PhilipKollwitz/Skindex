@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 import 'search_screen.dart';
+import 'add_inventory_screen.dart';
+import '../main.dart' show Item;
 
 // ── Theme colors
 const Color _bg = Color(0xFF060E06);
@@ -22,21 +24,31 @@ class HomeScreen extends StatefulWidget {
 
 class _HomeScreenState extends State<HomeScreen> {
   int _index = 0;
+  // ignore: unused_field
+  String? _steamId;
+  // ignore: unused_field
+  List<Item> _inventoryItems = [];
 
-  static const _tabs = [
-    _HomeTab(),
-    SearchScreen(),
-    _PlaceholderTab(label: 'Inventar', icon: Icons.inventory_2_outlined),
-    _PlaceholderTab(label: 'Markt', icon: Icons.grid_view_rounded),
-    _PlaceholderTab(label: 'Profil', icon: Icons.person_outline),
-  ];
+  void _onInventoryLoaded(String steamId, List<Item> items) {
+    setState(() {
+      _steamId = steamId;
+      _inventoryItems = items;
+    });
+  }
 
   @override
   Widget build(BuildContext context) {
     final bottomPad = MediaQuery.of(context).padding.bottom;
+    final tabs = [
+      const _HomeTab(),
+      const SearchScreen(),
+      InventorySetupScreen(onInventoryLoaded: _onInventoryLoaded),
+      const _PlaceholderTab(label: 'Markt', icon: Icons.grid_view_rounded),
+      const _PlaceholderTab(label: 'Profil', icon: Icons.person_outline),
+    ];
     return Scaffold(
       backgroundColor: _bg,
-      body: IndexedStack(index: _index, children: _tabs),
+      body: IndexedStack(index: _index, children: tabs),
       bottomNavigationBar: _BottomNav(
         selectedIndex: _index,
         onTap: (i) => setState(() => _index = i),
