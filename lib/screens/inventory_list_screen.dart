@@ -85,14 +85,19 @@ class _InventoryListScreenState extends State<InventoryListScreen> {
     if (!mounted) return;
     final total = _calcTotal();
 
-    // Initial-Snapshot speichern (nur beim allerersten Mal)
+    // Preismap für Persistierung
     final currentPriceMap = <String, double>{};
     for (final item in widget.items) {
       final hash = buildMarketHashName(item);
       final price = _prices[hash]?.suggestedPrice;
       if (price != null) currentPriceMap[hash] = price;
     }
+
+    // Steam-Profil + Items in Firestore speichern (für Cron-Job)
+    await PortfolioStorage.saveSteamProfile(widget.steamId, widget.items);
+    // Initial-Snapshot speichern (nur beim allerersten Mal)
     await PortfolioStorage.saveInitialIfAbsent(widget.steamId, currentPriceMap);
+    // Tages-Snapshot für Graph anhängen
     await PortfolioStorage.appendValueHistory(widget.steamId, total);
 
     // Initial-Preise neu laden falls gerade erstmalig gespeichert
@@ -381,7 +386,7 @@ class _InventoryListScreenState extends State<InventoryListScreen> {
             child: ListView.separated(
               padding: const EdgeInsets.fromLTRB(12, 0, 12, 24),
               itemCount: filtered.length,
-              separatorBuilder: (_, __) => const SizedBox(height: 8),
+              separatorBuilder: (_, _) => const SizedBox(height: 8),
               itemBuilder: (context, i) {
                 final item = filtered[i];
                 final hash = buildMarketHashName(item);
