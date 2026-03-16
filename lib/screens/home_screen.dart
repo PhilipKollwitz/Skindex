@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'search_screen.dart';
 import 'add_inventory_screen.dart';
+import 'inventory_list_screen.dart';
 import '../main.dart' show Item;
 
 // ── Theme colors
@@ -42,7 +43,16 @@ class _HomeScreenState extends State<HomeScreen> {
     final tabs = [
       const _HomeTab(),
       const SearchScreen(),
-      InventorySetupScreen(onInventoryLoaded: _onInventoryLoaded),
+      _steamId != null
+          ? InventoryListScreen(
+              steamId: _steamId!,
+              items: _inventoryItems,
+              onReset: () => setState(() {
+                _steamId = null;
+                _inventoryItems = [];
+              }),
+            )
+          : InventorySetupScreen(onInventoryLoaded: _onInventoryLoaded),
       const _PlaceholderTab(label: 'Markt', icon: Icons.grid_view_rounded),
       const _PlaceholderTab(label: 'Profil', icon: Icons.person_outline),
     ];
