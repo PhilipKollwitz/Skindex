@@ -370,6 +370,73 @@ exports.skinportMarket = onRequest(async (req, res) => {
   });
 });
 
+/**
+ * GET /skinportBulkPrices?hashes=AK-47%20|%20Redline,...&currency=EUR
+ *
+ * Gibt Preise für mehrere Items auf einmal zurück (1 API-Call statt N).
+ * Nutzt denselben 5-min-Cache wie /skinportPrice.
+ */
+exports.skinportBulkPrices = onRequest(async (req, res) => {
+  if (handleCors(req, res)) return;
+  if (req.method !== "GET") { res.status(405).json({ error: "Use GET" }); return; }
+
+  const currency = (req.query.currency || "EUR").toUpperCase();
+  const hashesParam = req.query.hashes;
+  if (!hashesParam) {
+    res.status(400).json({ error: "hashes parameter required" });
+    return;
+  }
+  const hashes = hashesParam.split(",").map((h) => h.trim()).filter(Boolean);
+
+  const now = Date.now();
+  let cacheEntry = skinportCache[currency];
+
+  if (!cacheEntry || now - cacheEntry.ts > SKINPORT_CACHE_MS) {
+    try {
+      const params = new URLSearchParams({ app_id: "730", currency });
+      const apiResp = await axios.get(
+        `https://api.skinport.com/v1/items?${params.toString()}`,
+        {
+          timeout: 15000,
+          headers: {
+            "Accept-Encoding": "br, gzip, deflate",
+            "User-Agent": "Mozilla/5.0 (compatible; Skindex/1.0)",
+          },
+          decompress: true,
+        }
+      );
+      const items = Array.isArray(apiResp.data) ? apiResp.data : [];
+      cacheEntry = { ts: now, items };
+      skinportCache[currency] = cacheEntry;
+    } catch (err) {
+      logger.error("skinportBulkPrices fetch error", err.message);
+      res.status(500).json({ error: "Skinport fetch failed" });
+      return;
+    }
+  }
+
+  // Index aufbauen für O(1) Lookup
+  const index = {};
+  for (const item of cacheEntry.items) {
+    if (item.market_hash_name) index[item.market_hash_name] = item;
+  }
+
+  const result = {};
+  for (const hash of hashes) {
+    const item = index[hash];
+    if (item) {
+      result[hash] = {
+        currency: item.currency || currency,
+        min_price: item.min_price ?? null,
+        max_price: item.max_price ?? null,
+        suggested_price: item.suggested_price ?? null,
+      };
+    }
+  }
+
+  res.json(result);
+});
+
 // Proxy für das CS2-Inventar (App 730, Context 2)
 exports.steamInventory = onRequest(async (req, res) => {
   // CORS erlauben (für Flutter Web)
