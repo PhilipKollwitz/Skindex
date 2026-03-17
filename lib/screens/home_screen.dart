@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'search_screen.dart';
 import 'add_inventory_screen.dart';
 import 'inventory_list_screen.dart';
+import 'market_screen.dart';
 import '../main.dart' show Item;
 
 // ── Theme colors
@@ -53,7 +54,7 @@ class _HomeScreenState extends State<HomeScreen> {
               }),
             )
           : InventorySetupScreen(onInventoryLoaded: _onInventoryLoaded),
-      const _PlaceholderTab(label: 'Markt', icon: Icons.grid_view_rounded),
+      const MarketScreen(),
       const _PlaceholderTab(label: 'Profil', icon: Icons.person_outline),
     ];
     return Scaffold(
