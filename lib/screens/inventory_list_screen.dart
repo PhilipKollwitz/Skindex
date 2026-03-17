@@ -1,5 +1,5 @@
 import 'package:flutter/material.dart';
-import '../main.dart' show Item, fetchSkinportPrice, SkinportPriceResult, buildMarketHashName, proxyImageUrl;
+import '../main.dart' show Item, fetchBulkSkinportPrices, SkinportPriceResult, buildMarketHashName, proxyImageUrl;
 import '../services/portfolio_storage.dart';
 import 'portfolio_screen.dart';
 
@@ -68,21 +68,13 @@ class _InventoryListScreenState extends State<InventoryListScreen> {
       });
     }
 
-    for (final item in widget.items) {
-      if (!mounted) return;
-      final hash = buildMarketHashName(item);
-      try {
-        final result = await fetchSkinportPrice(hash);
-        if (!mounted) return;
-        setState(() {
-          _prices[hash] = result;
-          _totalValue = _calcTotal();
-        });
-      } catch (_) {
-        // Einzelne Fehler überspringen
-      }
-    }
+    final hashes = widget.items.map(buildMarketHashName).toList();
+    final bulk = await fetchBulkSkinportPrices(hashes);
     if (!mounted) return;
+    setState(() {
+      _prices.addAll(bulk);
+      _totalValue = _calcTotal();
+    });
     final total = _calcTotal();
 
     // Preismap für Persistierung
@@ -235,7 +227,7 @@ class _InventoryListScreenState extends State<InventoryListScreen> {
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: 12),
             child: GestureDetector(
-              onTap: _initialSet
+              onTap: _totalValue > 0
                   ? () => Navigator.of(context).push(
                         MaterialPageRoute(
                           builder: (_) => PortfolioScreen(

@@ -45,6 +45,7 @@ const String steamListingBase =
 const String cloudFunctionsBase =
     'https://europe-west1-skindex-97204.cloudfunctions.net';
 const String skinportPriceFunctionUrl = '$cloudFunctionsBase/skinportPrice';
+const String skinportBulkPricesFunctionUrl = '$cloudFunctionsBase/skinportBulkPrices';
 const String proxyImageFunctionUrl = '$cloudFunctionsBase/proxyImage';
 const String functionsBaseUrl =
     'https://europe-west1-skindex-97204.cloudfunctions.net';
@@ -303,6 +304,65 @@ Future<SkinportPriceResult> fetchSkinportPrice(
     maxPrice: toDouble(obj['max_price']),
     suggestedPrice: toDouble(obj['suggested_price']),
   );
+}
+
+/// Skinport-Preise für mehrere Items auf einmal (1 API-Call statt N)
+/// Hashes werden in Chunks à 100 aufgeteilt um URL-Limits zu vermeiden.
+Future<Map<String, SkinportPriceResult>> fetchBulkSkinportPrices(
+  List<String> marketHashNames, {
+  String currency = 'EUR',
+}) async {
+  if (marketHashNames.isEmpty) return {};
+
+  const chunkSize = 100;
+  final chunks = <List<String>>[];
+  for (var i = 0; i < marketHashNames.length; i += chunkSize) {
+    chunks.add(marketHashNames.sublist(
+      i,
+      (i + chunkSize).clamp(0, marketHashNames.length),
+    ));
+  }
+
+  final results = await Future.wait<Map<String, SkinportPriceResult>>(chunks.map((chunk) async {
+    final uri = Uri.parse(skinportBulkPricesFunctionUrl).replace(
+      queryParameters: {
+        'hashes': chunk.join(','),
+        'currency': currency,
+      },
+    );
+    try {
+      final res = await http.get(uri).timeout(const Duration(seconds: 20));
+      if (res.statusCode != 200) return <String, SkinportPriceResult>{};
+      final data = jsonDecode(res.body) as Map<String, dynamic>;
+
+      double? toDouble(dynamic v) {
+        if (v == null) return null;
+        if (v is num) return v.toDouble();
+        return double.tryParse(v.toString().replaceAll(',', '.'));
+      }
+
+      return data.map((key, value) {
+        final v = value as Map<String, dynamic>;
+        return MapEntry(
+          key,
+          SkinportPriceResult(
+            currency: v['currency'] as String?,
+            minPrice: toDouble(v['min_price']),
+            maxPrice: toDouble(v['max_price']),
+            suggestedPrice: toDouble(v['suggested_price']),
+          ),
+        );
+      });
+    } catch (_) {
+      return <String, SkinportPriceResult>{};
+    }
+  }));
+
+  final combined = <String, SkinportPriceResult>{};
+  for (final map in results) {
+    combined.addAll(map);
+  }
+  return combined;
 }
 
 /// Inventory aus Steam holen (wie fetch_cs_inventory)
