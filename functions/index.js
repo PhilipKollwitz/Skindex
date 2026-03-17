@@ -252,6 +252,124 @@ exports.dailyPortfolioSnapshot = onSchedule(
   }
 );
 
+// ─── In-memory Icon-Cache (per Function Instance) ───────────────────────────
+const imageCache = {};
+
+async function fetchSteamIconUrl(marketHashName) {
+  if (imageCache[marketHashName] !== undefined) return imageCache[marketHashName];
+  try {
+    const encoded = encodeURIComponent(marketHashName);
+    const url =
+      `https://steamcommunity.com/market/search/render/?appid=730&norender=1&count=1&query=${encoded}`;
+    const resp = await axios.get(url, {
+      timeout: 5000,
+      headers: { "User-Agent": "Mozilla/5.0 (compatible; Skindex/1.0)" },
+    });
+    const results = resp.data?.results;
+    if (Array.isArray(results) && results.length > 0) {
+      const iconHash = results[0]?.asset_description?.icon_url;
+      if (iconHash) {
+        const full = `https://community.cloudflare.steamstatic.com/economy/image/${iconHash}/360fx360f`;
+        imageCache[marketHashName] = full;
+        return full;
+      }
+    }
+  } catch (_) { /* ignore */ }
+  imageCache[marketHashName] = null;
+  return null;
+}
+
+/**
+ * GET /skinportMarket?currency=EUR
+ *
+ * Gibt Deals (günstig vs. Empfehlung) + Trending-Items zurück,
+ * angereichert mit Steam-CDN-Bild-URLs.
+ * Nutzt denselben 5-min-Cache wie /skinportPrice.
+ */
+exports.skinportMarket = onRequest(async (req, res) => {
+  if (handleCors(req, res)) return;
+  if (req.method !== "GET") { res.status(405).json({ error: "Use GET" }); return; }
+
+  const currency = (req.query.currency || "EUR").toUpperCase();
+  const now = Date.now();
+  let cacheEntry = skinportCache[currency];
+
+  if (!cacheEntry || now - cacheEntry.ts > SKINPORT_CACHE_MS) {
+    try {
+      const params = new URLSearchParams({ app_id: "730", currency });
+      const apiResp = await axios.get(
+        `https://api.skinport.com/v1/items?${params.toString()}`,
+        {
+          timeout: 15000,
+          headers: {
+            "Accept-Encoding": "br, gzip, deflate",
+            "User-Agent": "Mozilla/5.0 (compatible; Skindex/1.0)",
+          },
+          decompress: true,
+        }
+      );
+      const items = Array.isArray(apiResp.data) ? apiResp.data : [];
+      cacheEntry = { ts: now, items };
+      skinportCache[currency] = cacheEntry;
+    } catch (err) {
+      logger.error("skinportMarket fetch error", err.message);
+      res.status(500).json({ error: "Skinport fetch failed" });
+      return;
+    }
+  }
+
+  const items = cacheEntry.items;
+
+  // Deals: min_price deutlich unter suggested_price
+  const rawDeals = items
+    .filter((i) => i.min_price != null && i.suggested_price > 1 && i.quantity > 0)
+    .map((i) => ({
+      market_hash_name: i.market_hash_name,
+      min_price: i.min_price,
+      suggested_price: i.suggested_price,
+      quantity: i.quantity,
+      discount_pct: Math.round((1 - i.min_price / i.suggested_price) * 100),
+      item_page: i.item_page || null,
+      updated_at: i.updated_at || null,
+    }))
+    .filter((i) => i.discount_pct >= 5)
+    .sort((a, b) => b.discount_pct - a.discount_pct)
+    .slice(0, 25);
+
+  // Trending: hochwertige Items sortiert nach Preis
+  const rawTrending = items
+    .filter((i) => i.suggested_price > 50 && i.quantity > 0)
+    .sort((a, b) => b.suggested_price - a.suggested_price)
+    .slice(0, 15)
+    .map((i) => ({
+      market_hash_name: i.market_hash_name,
+      suggested_price: i.suggested_price,
+      min_price: i.min_price ?? null,
+      discount_pct: i.min_price
+        ? Math.round((1 - i.min_price / i.suggested_price) * 100)
+        : 0,
+      quantity: i.quantity,
+      item_page: i.item_page || null,
+    }));
+
+  // Icons parallel holen (Fire-and-forget mit allSettled)
+  const allNames = [
+    ...new Set([
+      ...rawDeals.map((i) => i.market_hash_name),
+      ...rawTrending.map((i) => i.market_hash_name),
+    ]),
+  ];
+  await Promise.allSettled(allNames.map((n) => fetchSteamIconUrl(n)));
+
+  const enrich = (i) => ({ ...i, icon_url: imageCache[i.market_hash_name] ?? null });
+
+  res.json({
+    deals: rawDeals.map(enrich),
+    trending: rawTrending.map(enrich),
+    fetched_at: now,
+  });
+});
+
 // Proxy für das CS2-Inventar (App 730, Context 2)
 exports.steamInventory = onRequest(async (req, res) => {
   // CORS erlauben (für Flutter Web)
