@@ -75,9 +75,38 @@ class _PortfolioScreenState extends State<PortfolioScreen> {
     return sum;
   }
 
-  double get _changeValue => _currentTotal - _initialTotal;
-  double get _changePercent =>
-      _initialTotal > 0 ? (_changeValue / _initialTotal) * 100 : 0;
+  // Erster Datenpunkt im gewählten Zeitraum (für dynamische Veränderung)
+  double? get _rangeStartValue {
+    final filtered = _filteredHistory;
+    if (filtered.isEmpty) return null;
+    return filtered.first.totalValue;
+  }
+
+  double get _changeValue {
+    final base = _rangeStartValue;
+    if (base != null) return _currentTotal - base;
+    return _currentTotal - _initialTotal;
+  }
+
+  double get _changePercent {
+    final base = _rangeStartValue ?? _initialTotal;
+    return base > 0 ? (_changeValue / base) * 100 : 0;
+  }
+
+  String get _changeLabel {
+    switch (_range) {
+      case _TimeRange.d1:
+        return 'letzte 24h';
+      case _TimeRange.w1:
+        return 'letzte 7 Tage';
+      case _TimeRange.m1:
+        return 'letzter Monat';
+      case _TimeRange.m3:
+        return 'letzte 3 Monate';
+      case _TimeRange.all:
+        return 'seit Ersteinlesen';
+    }
+  }
 
   List<ValueSnapshot> get _filteredHistory {
     if (_history.isEmpty) return [];
@@ -215,9 +244,9 @@ class _PortfolioScreenState extends State<PortfolioScreen> {
                       ),
                     ),
                     const SizedBox(width: 8),
-                    const Text(
-                      'seit Ersteinlesen',
-                      style: TextStyle(color: _textDim, fontSize: 12),
+                    Text(
+                      _changeLabel,
+                      style: const TextStyle(color: _textDim, fontSize: 12),
                     ),
                   ],
                 ),
@@ -319,10 +348,15 @@ class _PortfolioScreenState extends State<PortfolioScreen> {
     );
   }
 
+  String _fmtDate(DateTime dt) {
+    return '${dt.day.toString().padLeft(2, '0')}.${dt.month.toString().padLeft(2, '0')}';
+  }
+
   Widget _buildChart(List<ValueSnapshot> data) {
     final minVal = data.map((s) => s.totalValue).reduce((a, b) => a < b ? a : b);
     final maxVal = data.map((s) => s.totalValue).reduce((a, b) => a > b ? a : b);
     final padding = (maxVal - minVal) * 0.15 + 1;
+    final lastIdx = (data.length - 1).toDouble();
 
     final spots = data.asMap().entries.map((e) {
       return FlSpot(e.key.toDouble(), e.value.totalValue);
@@ -334,7 +368,33 @@ class _PortfolioScreenState extends State<PortfolioScreen> {
         maxY: maxVal + padding,
         gridData: const FlGridData(show: false),
         borderData: FlBorderData(show: false),
-        titlesData: const FlTitlesData(show: false),
+        titlesData: FlTitlesData(
+          leftTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
+          rightTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
+          topTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
+          bottomTitles: AxisTitles(
+            sideTitles: SideTitles(
+              showTitles: true,
+              reservedSize: 22,
+              interval: lastIdx > 0 ? lastIdx : 1,
+              getTitlesWidget: (value, meta) {
+                String label = '';
+                if (value == 0) {
+                  label = _fmtDate(data.first.timestamp);
+                } else if (value == lastIdx) {
+                  label = _fmtDate(data.last.timestamp);
+                } else {
+                  return const SizedBox.shrink();
+                }
+                return Padding(
+                  padding: const EdgeInsets.only(top: 4),
+                  child: Text(label,
+                      style: const TextStyle(color: _textDim, fontSize: 10)),
+                );
+              },
+            ),
+          ),
+        ),
         lineTouchData: LineTouchData(
           touchTooltipData: LineTouchTooltipData(
             getTooltipColor: (_) => const Color(0xFF0D2A14),
@@ -508,7 +568,7 @@ class _AssetRow extends StatelessWidget {
                     width: 60,
                     height: 60,
                     fit: BoxFit.cover,
-                    errorBuilder: (_, _, _) => _fallback,
+                    errorBuilder: (_, __, _) => _fallback,
                   )
                 : _fallback,
           ),
