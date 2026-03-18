@@ -57,16 +57,18 @@ class _InventoryListScreenState extends State<InventoryListScreen> {
   Future<void> _fetchPrices() async {
     setState(() => _loadingPrices = true);
 
-    // Bereits gespeicherte Initial-Preise laden
-    final savedInitial =
-        await PortfolioStorage.loadInitialPrices(widget.steamId);
-    if (savedInitial != null && mounted) {
-      setState(() {
-        _initialPrices = savedInitial;
-        _initialTotal = savedInitial.values.fold(0, (s, v) => s + v);
-        _initialSet = true;
-      });
-    }
+    // Bereits gespeicherte Initial-Preise laden (Firestore kann durch Ad-Blocker blockiert sein)
+    try {
+      final savedInitial =
+          await PortfolioStorage.loadInitialPrices(widget.steamId);
+      if (savedInitial != null && mounted) {
+        setState(() {
+          _initialPrices = savedInitial;
+          _initialTotal = savedInitial.values.fold(0, (s, v) => s + v);
+          _initialSet = true;
+        });
+      }
+    } catch (_) {}
 
     final hashes = widget.items.map(buildMarketHashName).toList();
     final bulk = await fetchBulkSkinportPrices(hashes);
@@ -84,25 +86,27 @@ class _InventoryListScreenState extends State<InventoryListScreen> {
   }
 
   Future<void> _persistToFirestore() async {
-    final total = _totalValue;
-    final currentPriceMap = <String, double>{};
-    for (final item in widget.items) {
-      final hash = buildMarketHashName(item);
-      final price = _prices[hash]?.suggestedPrice;
-      if (price != null) currentPriceMap[hash] = price;
-    }
+    try {
+      final total = _totalValue;
+      final currentPriceMap = <String, double>{};
+      for (final item in widget.items) {
+        final hash = buildMarketHashName(item);
+        final price = _prices[hash]?.suggestedPrice;
+        if (price != null) currentPriceMap[hash] = price;
+      }
 
-    await PortfolioStorage.saveSteamProfile(widget.steamId, widget.items);
-    await PortfolioStorage.saveInitialIfAbsent(widget.steamId, currentPriceMap);
-    await PortfolioStorage.appendValueHistory(widget.steamId, total);
+      await PortfolioStorage.saveSteamProfile(widget.steamId, widget.items);
+      await PortfolioStorage.saveInitialIfAbsent(widget.steamId, currentPriceMap);
+      await PortfolioStorage.appendValueHistory(widget.steamId, total);
 
-    final init = await PortfolioStorage.loadInitialPrices(widget.steamId);
-    if (!mounted || init == null) return;
-    setState(() {
-      _initialPrices = init;
-      _initialTotal = init.values.fold(0, (s, v) => s + v);
-      _initialSet = true;
-    });
+      final init = await PortfolioStorage.loadInitialPrices(widget.steamId);
+      if (!mounted || init == null) return;
+      setState(() {
+        _initialPrices = init;
+        _initialTotal = init.values.fold(0, (s, v) => s + v);
+        _initialSet = true;
+      });
+    } catch (_) {}
   }
 
   double _calcTotal() {
