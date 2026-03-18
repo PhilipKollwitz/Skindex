@@ -1,0 +1,9 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(curl -s \"https://europe-west1-skindex-97204.cloudfunctions.net/skinportPrice?market_hash_name=%E2%98%85+Bayonet&currency=EUR\")",
+      "Bash(curl -v \"https://europe-west1-skindex-97204.cloudfunctions.net/skinportPrice?market_hash_name=AWP+Asiimov&currency=EUR\")",
+      "Bash(curl -s \"https://api.skinport.com/v1/items?app_id=730&currency=EUR&tradable=1\" -o /dev/null -w \"%{http_code}\")"
+    ]
+  }
+}
