@@ -71,13 +71,20 @@ class _InventoryListScreenState extends State<InventoryListScreen> {
     final hashes = widget.items.map(buildMarketHashName).toList();
     final bulk = await fetchBulkSkinportPrices(hashes);
     if (!mounted) return;
+
+    // UI sofort freigeben — Items ohne Skinport-Preis zeigen "—"
     setState(() {
       _prices.addAll(bulk);
       _totalValue = _calcTotal();
+      _loadingPrices = false;
     });
-    final total = _calcTotal();
 
-    // Preismap für Persistierung
+    // Firestore im Hintergrund — blockiert UI nicht
+    _persistToFirestore();
+  }
+
+  Future<void> _persistToFirestore() async {
+    final total = _totalValue;
     final currentPriceMap = <String, double>{};
     for (final item in widget.items) {
       final hash = buildMarketHashName(item);
@@ -85,25 +92,16 @@ class _InventoryListScreenState extends State<InventoryListScreen> {
       if (price != null) currentPriceMap[hash] = price;
     }
 
-    // Steam-Profil + Items in Firestore speichern (für Cron-Job)
     await PortfolioStorage.saveSteamProfile(widget.steamId, widget.items);
-    // Initial-Snapshot speichern (nur beim allerersten Mal)
     await PortfolioStorage.saveInitialIfAbsent(widget.steamId, currentPriceMap);
-    // Tages-Snapshot für Graph anhängen
     await PortfolioStorage.appendValueHistory(widget.steamId, total);
 
-    // Initial-Preise neu laden falls gerade erstmalig gespeichert
     final init = await PortfolioStorage.loadInitialPrices(widget.steamId);
-
-    if (!mounted) return;
+    if (!mounted || init == null) return;
     setState(() {
-      _totalValue = total;
-      _loadingPrices = false;
-      if (init != null) {
-        _initialPrices = init;
-        _initialTotal = init.values.fold(0, (s, v) => s + v);
-        _initialSet = true;
-      }
+      _initialPrices = init;
+      _initialTotal = init.values.fold(0, (s, v) => s + v);
+      _initialSet = true;
     });
   }
 
