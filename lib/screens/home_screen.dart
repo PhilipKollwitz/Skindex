@@ -1,5 +1,7 @@
+import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'search_screen.dart';
 import 'add_inventory_screen.dart';
 import 'inventory_list_screen.dart';
@@ -39,22 +41,70 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   Future<void> _checkLinkedInventory() async {
-    final uid = FirebaseAuth.instance.currentUser?.uid;
-    if (uid != null) {
+    // 1. Zuerst lokal prüfen (SharedPreferences, kein Netz nötig)
+    final prefs = await SharedPreferences.getInstance();
+    final localSteamId = prefs.getString('linked_steam_id');
+    final localItemsJson = prefs.getString('inventory_items');
+
+    if (localSteamId != null && localItemsJson != null) {
       try {
-        final steamId = await PortfolioStorage.getSteamIdForUid(uid);
-        if (steamId != null && mounted) {
-          final items = await PortfolioStorage.loadItems(steamId);
-          if (items != null && items.isNotEmpty && mounted) {
-            setState(() {
-              _steamId = steamId;
-              _inventoryItems = items;
-            });
-          }
+        final list = jsonDecode(localItemsJson) as List;
+        final items = list.map((m) => Item(
+          id: m['id'] as String? ?? '',
+          name: m['name'] as String? ?? '',
+          typeKey: m['typeKey'] as String? ?? 'skin',
+          image: m['image'] as String?,
+          marketHashName: m['marketHashName'] as String?,
+          amount: (m['amount'] as num?)?.toInt() ?? 1,
+          rarityColor: m['rarityColor'] as String?,
+          rarityName: m['rarityName'] as String?,
+        )).toList();
+        if (mounted) {
+          setState(() {
+            _steamId = localSteamId;
+            _inventoryItems = items;
+          });
         }
       } catch (_) {}
+    } else {
+      // 2. Kein lokaler Cache → Firestore versuchen (mit Timeout für Ad-Blocker)
+      final uid = FirebaseAuth.instance.currentUser?.uid;
+      if (uid != null) {
+        try {
+          final steamId = await PortfolioStorage.getSteamIdForUid(uid)
+              .timeout(const Duration(seconds: 5));
+          if (steamId != null) {
+            final items = await PortfolioStorage.loadItems(steamId)
+                .timeout(const Duration(seconds: 8));
+            if (items != null && items.isNotEmpty && mounted) {
+              setState(() {
+                _steamId = steamId;
+                _inventoryItems = items;
+              });
+              _saveInventoryLocally(steamId, items);
+            }
+          }
+        } catch (_) {}
+      }
     }
+
     if (mounted) setState(() => _checkingLinkedInventory = false);
+  }
+
+  Future<void> _saveInventoryLocally(String steamId, List<Item> items) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString('linked_steam_id', steamId);
+    final json = jsonEncode(items.map((item) => {
+      'id': item.id,
+      'name': item.name,
+      'typeKey': item.typeKey,
+      'image': item.image,
+      'marketHashName': item.marketHashName,
+      'amount': item.amount,
+      'rarityColor': item.rarityColor,
+      'rarityName': item.rarityName,
+    }).toList());
+    await prefs.setString('inventory_items', json);
   }
 
   void _onInventoryLoaded(String steamId, List<Item> items) {
@@ -62,7 +112,9 @@ class _HomeScreenState extends State<HomeScreen> {
       _steamId = steamId;
       _inventoryItems = items;
     });
-    // UID mit Steam-ID verknüpfen
+    // Lokal speichern (sofort, kein Netz nötig)
+    _saveInventoryLocally(steamId, items);
+    // Firestore im Hintergrund verknüpfen (für andere Geräte)
     final uid = FirebaseAuth.instance.currentUser?.uid;
     if (uid != null) {
       PortfolioStorage.linkUidToSteamId(uid, steamId);
@@ -88,10 +140,7 @@ class _HomeScreenState extends State<HomeScreen> {
           ? InventoryListScreen(
               steamId: _steamId!,
               items: _inventoryItems,
-              onReset: () => setState(() {
-                _steamId = null;
-                _inventoryItems = [];
-              }),
+              onBack: () => setState(() => _index = 0),
             )
           : InventorySetupScreen(onInventoryLoaded: _onInventoryLoaded),
       const MarketScreen(),
