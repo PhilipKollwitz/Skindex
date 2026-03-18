@@ -17,14 +17,13 @@ const Color _valueBg = Color(0xFF081A0A);
 class InventoryListScreen extends StatefulWidget {
   final String steamId;
   final List<Item> items;
-  /// Callback zum Zurücksetzen (zeigt wieder AddInventoryScreen)
-  final VoidCallback onReset;
+  final VoidCallback onBack;
 
   const InventoryListScreen({
     super.key,
     required this.steamId,
     required this.items,
-    required this.onReset,
+    required this.onBack,
   });
 
   @override
@@ -151,7 +150,7 @@ class _InventoryListScreenState extends State<InventoryListScreen> {
                 // Reset-Button
                 _IconBtn(
                   icon: Icons.arrow_back_rounded,
-                  onTap: widget.onReset,
+                  onTap: widget.onBack,
                 ),
                 const SizedBox(width: 12),
                 Expanded(
