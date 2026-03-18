@@ -123,4 +123,49 @@ class PortfolioStorage {
   static Future<void> clearProfile(String steamId) async {
     await _db.collection('steamProfiles').doc(steamId).delete();
   }
+
+  // ─── UID ↔ Steam-ID Verknüpfung ─────────────────────────────────────────
+
+  /// Verknüpft die Firebase Auth UID mit einer Steam-ID.
+  static Future<void> linkUidToSteamId(String uid, String steamId) async {
+    await _db.collection('userProfiles').doc(uid).set({
+      'steamId': steamId,
+      'updatedAt': FieldValue.serverTimestamp(),
+    }, SetOptions(merge: true));
+  }
+
+  /// Gibt die Steam-ID zurück die mit dieser UID verknüpft ist, oder null.
+  static Future<String?> getSteamIdForUid(String uid) async {
+    try {
+      final doc = await _db.collection('userProfiles').doc(uid).get();
+      return doc.data()?['steamId'] as String?;
+    } catch (_) {
+      return null;
+    }
+  }
+
+  /// Lädt die gespeicherten Inventar-Items aus Firestore.
+  static Future<List<Item>?> loadItems(String steamId) async {
+    try {
+      final doc = await _db.collection('steamProfiles').doc(steamId).get();
+      if (!doc.exists) return null;
+      final rawItems = doc.data()?['items'] as List<dynamic>?;
+      if (rawItems == null || rawItems.isEmpty) return null;
+      return rawItems.map((raw) {
+        final m = raw as Map<String, dynamic>;
+        return Item(
+          id: m['marketHashName'] as String? ?? m['name'] as String? ?? '',
+          name: m['name'] as String? ?? '',
+          typeKey: 'skin',
+          image: m['image'] as String?,
+          marketHashName: m['marketHashName'] as String?,
+          amount: (m['amount'] as num?)?.toInt() ?? 1,
+          rarityColor: m['rarityColor'] as String?,
+          rarityName: m['rarityName'] as String?,
+        );
+      }).toList();
+    } catch (_) {
+      return null;
+    }
+  }
 }
