@@ -1,9 +1,11 @@
 import 'package:flutter/material.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 import 'search_screen.dart';
 import 'add_inventory_screen.dart';
 import 'inventory_list_screen.dart';
 import 'market_screen.dart';
 import '../main.dart' show Item;
+import '../services/portfolio_storage.dart';
 
 // ── Theme colors
 const Color _bg = Color(0xFF060E06);
@@ -26,21 +28,59 @@ class HomeScreen extends StatefulWidget {
 
 class _HomeScreenState extends State<HomeScreen> {
   int _index = 0;
-  // ignore: unused_field
   String? _steamId;
-  // ignore: unused_field
   List<Item> _inventoryItems = [];
+  bool _checkingLinkedInventory = true;
+
+  @override
+  void initState() {
+    super.initState();
+    _checkLinkedInventory();
+  }
+
+  Future<void> _checkLinkedInventory() async {
+    final uid = FirebaseAuth.instance.currentUser?.uid;
+    if (uid != null) {
+      try {
+        final steamId = await PortfolioStorage.getSteamIdForUid(uid);
+        if (steamId != null && mounted) {
+          final items = await PortfolioStorage.loadItems(steamId);
+          if (items != null && items.isNotEmpty && mounted) {
+            setState(() {
+              _steamId = steamId;
+              _inventoryItems = items;
+            });
+          }
+        }
+      } catch (_) {}
+    }
+    if (mounted) setState(() => _checkingLinkedInventory = false);
+  }
 
   void _onInventoryLoaded(String steamId, List<Item> items) {
     setState(() {
       _steamId = steamId;
       _inventoryItems = items;
     });
+    // UID mit Steam-ID verknüpfen
+    final uid = FirebaseAuth.instance.currentUser?.uid;
+    if (uid != null) {
+      PortfolioStorage.linkUidToSteamId(uid, steamId);
+    }
   }
 
   @override
   Widget build(BuildContext context) {
     final bottomPad = MediaQuery.of(context).padding.bottom;
+    if (_checkingLinkedInventory) {
+      return const Scaffold(
+        backgroundColor: Color(0xFF060E06),
+        body: Center(
+          child: CircularProgressIndicator(color: Color(0xFF4ADE80)),
+        ),
+      );
+    }
+
     final tabs = [
       const _HomeTab(),
       const SearchScreen(),
