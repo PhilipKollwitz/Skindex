@@ -119,6 +119,29 @@ class PortfolioStorage {
     }
   }
 
+  /// Lädt den letzten gespeicherten Snapshot inkl. Itempreise (vom Cron-Job).
+  static Future<({double totalValue, Map<String, double> itemPrices})?> loadLatestItemSnapshot(
+    String steamId,
+  ) async {
+    try {
+      final snap = await _db
+          .collection('portfolioHistory')
+          .doc(steamId)
+          .collection('snapshots')
+          .orderBy('timestamp', descending: true)
+          .limit(1)
+          .get();
+      if (snap.docs.isEmpty) return null;
+      final data = snap.docs.first.data();
+      final totalValue = (data['totalValue'] as num?)?.toDouble() ?? 0;
+      final rawPrices = data['itemPrices'] as Map<String, dynamic>?;
+      final itemPrices = rawPrices?.map((k, v) => MapEntry(k, (v as num).toDouble())) ?? {};
+      return (totalValue: totalValue, itemPrices: itemPrices);
+    } catch (_) {
+      return null;
+    }
+  }
+
   /// Löscht das Profil (beim Inventar-Reset).
   static Future<void> clearProfile(String steamId) async {
     await _db.collection('steamProfiles').doc(steamId).delete();
