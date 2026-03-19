@@ -131,8 +131,6 @@ class _SearchScreenState extends State<SearchScreen>
                 ),
               ),
               _IconBtn(icon: Icons.tune_rounded),
-              const SizedBox(width: 10),
-              _IconBtn(icon: Icons.notifications_outlined),
             ],
           ),
         ),
@@ -142,6 +140,8 @@ class _SearchScreenState extends State<SearchScreen>
         // ── Category tabs
         TabBar(
           controller: _tabs,
+          isScrollable: true,
+          tabAlignment: TabAlignment.start,
           indicatorColor: _green,
           indicatorWeight: 2.5,
           labelColor: _green,
