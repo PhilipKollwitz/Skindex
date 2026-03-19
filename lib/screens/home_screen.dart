@@ -6,7 +6,7 @@ import 'search_screen.dart';
 import 'add_inventory_screen.dart';
 import 'inventory_list_screen.dart';
 import 'market_screen.dart';
-import '../main.dart' show Item;
+import '../main.dart' show Item, buildMarketHashName, proxyImageUrl;
 import '../services/portfolio_storage.dart';
 
 // ── Theme colors
@@ -49,16 +49,18 @@ class _HomeScreenState extends State<HomeScreen> {
     if (localSteamId != null && localItemsJson != null) {
       try {
         final list = jsonDecode(localItemsJson) as List;
-        final items = list.map((m) => Item(
-          id: m['id'] as String? ?? '',
-          name: m['name'] as String? ?? '',
-          typeKey: m['typeKey'] as String? ?? 'skin',
-          image: m['image'] as String?,
-          marketHashName: m['marketHashName'] as String?,
-          amount: (m['amount'] as num?)?.toInt() ?? 1,
-          rarityColor: m['rarityColor'] as String?,
-          rarityName: m['rarityName'] as String?,
-        )).toList();
+        final items = list
+            .map((m) => Item(
+                  id: m['id'] as String? ?? '',
+                  name: m['name'] as String? ?? '',
+                  typeKey: m['typeKey'] as String? ?? 'skin',
+                  image: m['image'] as String?,
+                  marketHashName: m['marketHashName'] as String?,
+                  amount: (m['amount'] as num?)?.toInt() ?? 1,
+                  rarityColor: m['rarityColor'] as String?,
+                  rarityName: m['rarityName'] as String?,
+                ))
+            .toList();
         if (mounted) {
           setState(() {
             _steamId = localSteamId;
@@ -94,16 +96,18 @@ class _HomeScreenState extends State<HomeScreen> {
   Future<void> _saveInventoryLocally(String steamId, List<Item> items) async {
     final prefs = await SharedPreferences.getInstance();
     await prefs.setString('linked_steam_id', steamId);
-    final json = jsonEncode(items.map((item) => {
-      'id': item.id,
-      'name': item.name,
-      'typeKey': item.typeKey,
-      'image': item.image,
-      'marketHashName': item.marketHashName,
-      'amount': item.amount,
-      'rarityColor': item.rarityColor,
-      'rarityName': item.rarityName,
-    }).toList());
+    final json = jsonEncode(items
+        .map((item) => {
+              'id': item.id,
+              'name': item.name,
+              'typeKey': item.typeKey,
+              'image': item.image,
+              'marketHashName': item.marketHashName,
+              'amount': item.amount,
+              'rarityColor': item.rarityColor,
+              'rarityName': item.rarityName,
+            })
+        .toList());
     await prefs.setString('inventory_items', json);
   }
 
@@ -112,9 +116,7 @@ class _HomeScreenState extends State<HomeScreen> {
       _steamId = steamId;
       _inventoryItems = items;
     });
-    // Lokal speichern (sofort, kein Netz nötig)
     _saveInventoryLocally(steamId, items);
-    // Firestore im Hintergrund verknüpfen (für andere Geräte)
     final uid = FirebaseAuth.instance.currentUser?.uid;
     if (uid != null) {
       PortfolioStorage.linkUidToSteamId(uid, steamId);
@@ -134,7 +136,13 @@ class _HomeScreenState extends State<HomeScreen> {
     }
 
     final tabs = [
-      const _HomeTab(),
+      _HomeTab(
+        steamId: _steamId,
+        inventoryItems: _inventoryItems,
+        onSearchTap: () => setState(() => _index = 1),
+        onInventoryTap: () => setState(() => _index = 2),
+        onMarketTap: () => setState(() => _index = 3),
+      ),
       const SearchScreen(),
       _steamId != null
           ? InventoryListScreen(
@@ -229,10 +237,109 @@ class _BottomNav extends StatelessWidget {
 }
 
 // ─────────────────────────────────────────
-// HOME Tab
+// HOME Tab (StatefulWidget for data loading)
 // ─────────────────────────────────────────
-class _HomeTab extends StatelessWidget {
-  const _HomeTab();
+class _HomeTab extends StatefulWidget {
+  final String? steamId;
+  final List<Item> inventoryItems;
+  final VoidCallback onSearchTap;
+  final VoidCallback onInventoryTap;
+  final VoidCallback onMarketTap;
+
+  const _HomeTab({
+    required this.steamId,
+    required this.inventoryItems,
+    required this.onSearchTap,
+    required this.onInventoryTap,
+    required this.onMarketTap,
+  });
+
+  @override
+  State<_HomeTab> createState() => _HomeTabState();
+}
+
+class _HomeTabState extends State<_HomeTab> {
+  double? _latestValue;
+  double? _change24h;
+  List<_MoverItem> _topMovers = [];
+  bool _loadingData = false;
+
+  @override
+  void initState() {
+    super.initState();
+    if (widget.steamId != null) _loadData();
+  }
+
+  @override
+  void didUpdateWidget(_HomeTab oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.steamId != widget.steamId && widget.steamId != null) {
+      _loadData();
+    }
+  }
+
+  Future<void> _loadData() async {
+    if (widget.steamId == null) return;
+    setState(() => _loadingData = true);
+
+    try {
+      // Letzten 2 Snapshots für 24h-Änderung
+      final history = await PortfolioStorage.loadValueHistory(widget.steamId!)
+          .timeout(const Duration(seconds: 5));
+
+      double? latestValue;
+      double? change24h;
+      if (history.isNotEmpty) {
+        latestValue = history.last.totalValue;
+        if (history.length >= 2) {
+          change24h = latestValue - history[history.length - 2].totalValue;
+        }
+      }
+
+      // Top-Mover: initialPrices vs. letzter Cron-Snapshot
+      final initialPrices =
+          await PortfolioStorage.loadInitialPrices(widget.steamId!)
+              .timeout(const Duration(seconds: 5));
+      final latestSnap =
+          await PortfolioStorage.loadLatestItemSnapshot(widget.steamId!)
+              .timeout(const Duration(seconds: 5));
+
+      final movers = <_MoverItem>[];
+      if (initialPrices != null &&
+          latestSnap != null &&
+          latestSnap.itemPrices.isNotEmpty) {
+        for (final item in widget.inventoryItems) {
+          final hash = buildMarketHashName(item);
+          final initial = initialPrices[hash];
+          final current = latestSnap.itemPrices[hash];
+          if (initial != null && current != null && initial > 0) {
+            final pct = (current - initial) / initial * 100;
+            if (pct.abs() >= 0.5) {
+              movers.add(_MoverItem(
+                name: item.name,
+                changePercent: pct,
+                currentPrice: current,
+                imageUrl: item.image,
+              ));
+            }
+          }
+        }
+        movers.sort(
+            (a, b) => b.changePercent.abs().compareTo(a.changePercent.abs()));
+      }
+
+      if (mounted) {
+        setState(() {
+          _latestValue = latestValue;
+          _change24h = change24h;
+          _topMovers = movers.take(3).toList();
+          _loadingData = false;
+        });
+      }
+    } catch (_) {
+      if (mounted) setState(() => _loadingData = false);
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -264,7 +371,7 @@ class _HomeTab extends StatelessWidget {
           // Items suchen card
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: 16),
-            child: _SearchCard(),
+            child: _SearchCard(onTap: widget.onSearchTap),
           ),
 
           const SizedBox(height: 12),
@@ -272,7 +379,13 @@ class _HomeTab extends StatelessWidget {
           // Mein Inventar card
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: 16),
-            child: _InventarCard(),
+            child: _InventarCard(
+              onTap: widget.onInventoryTap,
+              itemCount: widget.inventoryItems.length,
+              totalValue: _latestValue,
+              change24h: _change24h,
+              hasInventory: widget.steamId != null,
+            ),
           ),
 
           const SizedBox(height: 24),
@@ -280,7 +393,12 @@ class _HomeTab extends StatelessWidget {
           // Markt-Heatmap
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: 16),
-            child: _HeatmapSection(),
+            child: _HeatmapSection(
+              onTap: widget.onMarketTap,
+              topMovers: _topMovers,
+              isLoading: _loadingData,
+              hasInventory: widget.steamId != null,
+            ),
           ),
 
           const SizedBox(height: 24),
@@ -290,12 +408,31 @@ class _HomeTab extends StatelessWidget {
   }
 }
 
+class _MoverItem {
+  final String name;
+  final double changePercent;
+  final double currentPrice;
+  final String? imageUrl;
+
+  const _MoverItem({
+    required this.name,
+    required this.changePercent,
+    required this.currentPrice,
+    required this.imageUrl,
+  });
+}
+
 // ─────────────────────────────────────────
 // Header
 // ─────────────────────────────────────────
 class _Header extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
+    final user = FirebaseAuth.instance.currentUser;
+    final displayName =
+        user?.displayName ?? user?.email?.split('@').first ?? 'Nutzer';
+    final photoUrl = user?.photoURL;
+
     return Row(
       crossAxisAlignment: CrossAxisAlignment.center,
       children: [
@@ -318,14 +455,15 @@ class _Header extends StatelessWidget {
                   end: Alignment.bottomLeft,
                 ),
               ),
-              child: const Icon(Icons.whatshot, color: Colors.white, size: 24),
+              child:
+                  const Icon(Icons.whatshot, color: Colors.white, size: 24),
             ),
           ),
         ),
 
         const SizedBox(width: 12),
 
-        // Avatar + welcome
+        // Avatar
         Stack(
           children: [
             Container(
@@ -336,7 +474,16 @@ class _Header extends StatelessWidget {
                 border: Border.all(color: _green, width: 2),
                 color: const Color(0xFF1A3520),
               ),
-              child: const Icon(Icons.person, color: _green, size: 26),
+              child: ClipOval(
+                child: photoUrl != null
+                    ? Image.network(
+                        photoUrl,
+                        fit: BoxFit.cover,
+                        errorBuilder: (_, _, _) =>
+                            const Icon(Icons.person, color: _green, size: 26),
+                      )
+                    : const Icon(Icons.person, color: _green, size: 26),
+              ),
             ),
             // Online dot
             Positioned(
@@ -363,7 +510,7 @@ class _Header extends StatelessWidget {
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               const Text(
-                'AKTIVER AGENT',
+                'WILLKOMMEN',
                 style: TextStyle(
                   color: _green,
                   fontSize: 10,
@@ -372,28 +519,18 @@ class _Header extends StatelessWidget {
                 ),
               ),
               const SizedBox(height: 2),
-              const Text(
-                'Willkommen, Global Elite',
-                style: TextStyle(
+              Text(
+                displayName,
+                style: const TextStyle(
                   color: Colors.white,
                   fontSize: 18,
                   fontWeight: FontWeight.bold,
                   height: 1.2,
                 ),
+                overflow: TextOverflow.ellipsis,
               ),
             ],
           ),
-        ),
-
-        // Bell
-        Container(
-          width: 44,
-          height: 44,
-          decoration: BoxDecoration(
-            color: _green,
-            borderRadius: BorderRadius.circular(12),
-          ),
-          child: const Icon(Icons.notifications_outlined, color: Colors.black, size: 22),
         ),
       ],
     );
@@ -416,7 +553,11 @@ class _MarketTicker extends StatelessWidget {
               SizedBox(width: 6),
               Text('MARKT', style: _tickerLabelStyle),
               SizedBox(width: 6),
-              Text('↑2.4%', style: TextStyle(color: _green, fontSize: 13, fontWeight: FontWeight.w700)),
+              Text('↑2.4%',
+                  style: TextStyle(
+                      color: _green,
+                      fontSize: 13,
+                      fontWeight: FontWeight.w700)),
               SizedBox(width: 6),
               Text('MARKT +2.4%', style: _tickerLabelStyle),
             ],
@@ -467,44 +608,42 @@ class _TickerPill extends StatelessWidget {
 // Items suchen card
 // ─────────────────────────────────────────
 class _SearchCard extends StatelessWidget {
+  final VoidCallback onTap;
+  const _SearchCard({required this.onTap});
+
   @override
   Widget build(BuildContext context) {
-    return _Card(
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              _GreenIconBox(icon: Icons.search_rounded),
-              const Spacer(),
-              const Icon(Icons.chevron_right_rounded, color: _textDim, size: 26),
-            ],
-          ),
-          const SizedBox(height: 16),
-          const Text(
-            'Items suchen',
-            style: TextStyle(
-              color: Colors.white,
-              fontSize: 22,
-              fontWeight: FontWeight.bold,
+    return GestureDetector(
+      onTap: onTap,
+      child: _Card(
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                _GreenIconBox(icon: Icons.search_rounded),
+                const Spacer(),
+                const Icon(Icons.chevron_right_rounded,
+                    color: _textDim, size: 26),
+              ],
             ),
-          ),
-          const SizedBox(height: 6),
-          const Text(
-            'Muster, Floats und Marktpreise prüfen.',
-            style: TextStyle(color: _textDim, fontSize: 14, height: 1.4),
-          ),
-          const SizedBox(height: 16),
-          Wrap(
-            spacing: 8,
-            children: const [
-              _Chip('KNIVES'),
-              _Chip('GLOVES'),
-              _Chip('CASES'),
-            ],
-          ),
-        ],
+            const SizedBox(height: 16),
+            const Text(
+              'Items suchen',
+              style: TextStyle(
+                color: Colors.white,
+                fontSize: 22,
+                fontWeight: FontWeight.bold,
+              ),
+            ),
+            const SizedBox(height: 6),
+            const Text(
+              'Muster, Floats und Marktpreise prüfen.',
+              style: TextStyle(color: _textDim, fontSize: 14, height: 1.4),
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -514,110 +653,142 @@ class _SearchCard extends StatelessWidget {
 // Mein Inventar card
 // ─────────────────────────────────────────
 class _InventarCard extends StatelessWidget {
+  final VoidCallback onTap;
+  final int itemCount;
+  final double? totalValue;
+  final double? change24h;
+  final bool hasInventory;
+
+  const _InventarCard({
+    required this.onTap,
+    required this.itemCount,
+    required this.hasInventory,
+    this.totalValue,
+    this.change24h,
+  });
+
   @override
   Widget build(BuildContext context) {
-    return _Card(
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              _GreenIconBox(icon: Icons.inventory_2_rounded),
-              const Spacer(),
-              const Icon(Icons.chevron_right_rounded, color: _textDim, size: 26),
-            ],
-          ),
-          const SizedBox(height: 16),
-          Row(
-            children: [
-              const Text(
-                'Mein Inventar',
-                style: TextStyle(
-                  color: Colors.white,
-                  fontSize: 22,
-                  fontWeight: FontWeight.bold,
-                ),
-              ),
-              const SizedBox(width: 10),
-              Container(
-                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-                decoration: BoxDecoration(
-                  color: _green,
-                  borderRadius: BorderRadius.circular(6),
-                ),
-                child: const Text(
-                  '42',
+    return GestureDetector(
+      onTap: onTap,
+      child: _Card(
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                _GreenIconBox(icon: Icons.inventory_2_rounded),
+                const Spacer(),
+                const Icon(Icons.chevron_right_rounded,
+                    color: _textDim, size: 26),
+              ],
+            ),
+            const SizedBox(height: 16),
+            Row(
+              children: [
+                const Text(
+                  'Mein Inventar',
                   style: TextStyle(
-                    color: Colors.black,
-                    fontSize: 12,
+                    color: Colors.white,
+                    fontSize: 22,
                     fontWeight: FontWeight.bold,
                   ),
                 ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 6),
-          const Text(
-            'Gesamtwert, ROI und Wertsteigerung verfolgen.',
-            style: TextStyle(color: _textDim, fontSize: 14, height: 1.4),
-          ),
-          const SizedBox(height: 20),
-          const Divider(color: Color(0xFF1A3520), thickness: 1),
-          const SizedBox(height: 16),
-          Row(
-            children: [
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: const [
-                    Text(
-                      'GESCHÄTZTER WERT',
-                      style: TextStyle(
-                        color: _green,
-                        fontSize: 10,
-                        fontWeight: FontWeight.w700,
-                        letterSpacing: 1.2,
-                      ),
+                if (hasInventory && itemCount > 0) ...[
+                  const SizedBox(width: 10),
+                  Container(
+                    padding:
+                        const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                    decoration: BoxDecoration(
+                      color: _green,
+                      borderRadius: BorderRadius.circular(6),
                     ),
-                    SizedBox(height: 6),
-                    Text(
-                      '\$12,450.00',
-                      style: TextStyle(
-                        color: _green,
-                        fontSize: 26,
+                    child: Text(
+                      '$itemCount',
+                      style: const TextStyle(
+                        color: Colors.black,
+                        fontSize: 12,
                         fontWeight: FontWeight.bold,
                       ),
                     ),
-                  ],
-                ),
-              ),
-              Column(
-                crossAxisAlignment: CrossAxisAlignment.end,
-                children: const [
-                  Text(
-                    '24H ÄNDERUNG',
-                    style: TextStyle(
-                      color: _textDim,
-                      fontSize: 10,
-                      fontWeight: FontWeight.w700,
-                      letterSpacing: 1.2,
+                  ),
+                ],
+              ],
+            ),
+            const SizedBox(height: 6),
+            Text(
+              hasInventory
+                  ? 'Gesamtwert, ROI und Wertsteigerung verfolgen.'
+                  : 'Füge dein Inventar hinzu um es hier zu sehen.',
+              style: const TextStyle(
+                  color: _textDim, fontSize: 14, height: 1.4),
+            ),
+            if (hasInventory) ...[
+              const SizedBox(height: 20),
+              const Divider(color: Color(0xFF1A3520), thickness: 1),
+              const SizedBox(height: 16),
+              Row(
+                children: [
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        const Text(
+                          'GESCHÄTZTER WERT',
+                          style: TextStyle(
+                            color: _green,
+                            fontSize: 10,
+                            fontWeight: FontWeight.w700,
+                            letterSpacing: 1.2,
+                          ),
+                        ),
+                        const SizedBox(height: 6),
+                        Text(
+                          totalValue != null
+                              ? '\$${totalValue!.toStringAsFixed(2)}'
+                              : '—',
+                          style: const TextStyle(
+                            color: _green,
+                            fontSize: 26,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                      ],
                     ),
                   ),
-                  SizedBox(height: 6),
-                  Text(
-                    '+\$124.50',
-                    style: TextStyle(
-                      color: _green,
-                      fontSize: 18,
-                      fontWeight: FontWeight.bold,
-                    ),
+                  Column(
+                    crossAxisAlignment: CrossAxisAlignment.end,
+                    children: [
+                      const Text(
+                        '24H ÄNDERUNG',
+                        style: TextStyle(
+                          color: _textDim,
+                          fontSize: 10,
+                          fontWeight: FontWeight.w700,
+                          letterSpacing: 1.2,
+                        ),
+                      ),
+                      const SizedBox(height: 6),
+                      Text(
+                        change24h != null
+                            ? '${change24h! >= 0 ? '+' : ''}\$${change24h!.toStringAsFixed(2)}'
+                            : '—',
+                        style: TextStyle(
+                          color: change24h != null && change24h! < 0
+                              ? _red
+                              : _green,
+                          fontSize: 18,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                    ],
                   ),
                 ],
               ),
             ],
-          ),
-        ],
+          ],
+        ),
       ),
     );
   }
@@ -627,27 +798,20 @@ class _InventarCard extends StatelessWidget {
 // Markt-Heatmap section
 // ─────────────────────────────────────────
 class _HeatmapSection extends StatelessWidget {
+  final VoidCallback onTap;
+  final List<_MoverItem> topMovers;
+  final bool isLoading;
+  final bool hasInventory;
+
+  const _HeatmapSection({
+    required this.onTap,
+    required this.topMovers,
+    required this.isLoading,
+    required this.hasInventory,
+  });
+
   @override
   Widget build(BuildContext context) {
-    const items = [
-      _HeatmapItem(
-        name: 'AWP | Dragon Lore',
-        wear: 'Factory New',
-        change: '+\$450.00',
-        isPositive: true,
-        imageUrl:
-            'https://community.cloudflare.steamstatic.com/economy/image/-9a81dlWLwJ2UUGcVs_nsVtzdOEdtWwKGZZLQHTxDZ7I4lkMEsumr-BuE0MRiJWTxPaRqFc_GZQLoBBSH5bEv5NupMIVlG5kKA5Wubs7BAZjweTOd2gdvY6wkNiNwvKlYu-HxxRlj5Ep0-mQ84703gzl_UdlZg',
-      ),
-      _HeatmapItem(
-        name: 'Butterfly Knife | Fade',
-        wear: 'Minimal Wear',
-        change: '-\$12.40',
-        isPositive: false,
-        imageUrl:
-            'https://community.cloudflare.steamstatic.com/economy/image/-9a81dlWLwJ2UUGcVs_nsVtzdOEdtWwKGZZLQHTxDZ7I4lkMEsumr-BuE0MRiJWTxPaRqFc_GZQLoBBSH5bEv5NupMIVlG5kKA5Wubs7BAZjweTOd2gdvY6wkNOKwv-lYe-Hxxj4McpjjryXpt-g0Fbs_0tlYQ',
-      ),
-    ];
-
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -664,7 +828,7 @@ class _HeatmapSection extends StatelessWidget {
             ),
             const Spacer(),
             GestureDetector(
-              onTap: () {},
+              onTap: onTap,
               child: const Text(
                 'ALLE ANZEIGEN',
                 style: TextStyle(
@@ -678,28 +842,63 @@ class _HeatmapSection extends StatelessWidget {
           ],
         ),
         const SizedBox(height: 12),
-        Container(
-          decoration: BoxDecoration(
-            color: _cardBg,
-            borderRadius: BorderRadius.circular(16),
-            border: Border.all(color: _cardBorder, width: 1),
-          ),
-          child: Column(
-            children: List.generate(items.length, (i) {
-              final item = items[i];
-              return Column(
-                children: [
-                  item,
-                  if (i < items.length - 1)
-                    const Divider(
-                      color: Color(0xFF1A3520),
-                      height: 1,
-                      indent: 16,
-                      endIndent: 16,
+        GestureDetector(
+          onTap: onTap,
+          child: Container(
+            width: double.infinity,
+            decoration: BoxDecoration(
+              color: _cardBg,
+              borderRadius: BorderRadius.circular(16),
+              border: Border.all(color: _cardBorder, width: 1),
+            ),
+            child: isLoading
+                ? const Padding(
+                    padding: EdgeInsets.all(24),
+                    child: Center(
+                      child: SizedBox(
+                        width: 20,
+                        height: 20,
+                        child: CircularProgressIndicator(
+                            color: _green, strokeWidth: 2),
+                      ),
                     ),
-                ],
-              );
-            }),
+                  )
+                : !hasInventory || topMovers.isEmpty
+                    ? Padding(
+                        padding: const EdgeInsets.all(24),
+                        child: Column(
+                          children: [
+                            Icon(Icons.show_chart_rounded,
+                                color: _textDim, size: 32),
+                            const SizedBox(height: 12),
+                            Text(
+                              hasInventory
+                                  ? 'Preisveränderungen werden sichtbar\nsobald der Cron-Job läuft.'
+                                  : 'Kein Inventar verknüpft.',
+                              textAlign: TextAlign.center,
+                              style: const TextStyle(
+                                  color: _textDim, fontSize: 13),
+                            ),
+                          ],
+                        ),
+                      )
+                    : Column(
+                        children: List.generate(topMovers.length, (i) {
+                          final item = topMovers[i];
+                          return Column(
+                            children: [
+                              _HeatmapRow(item: item),
+                              if (i < topMovers.length - 1)
+                                const Divider(
+                                  color: Color(0xFF1A3520),
+                                  height: 1,
+                                  indent: 16,
+                                  endIndent: 16,
+                                ),
+                            ],
+                          );
+                        }),
+                      ),
           ),
         ),
       ],
@@ -707,24 +906,16 @@ class _HeatmapSection extends StatelessWidget {
   }
 }
 
-class _HeatmapItem extends StatelessWidget {
-  final String name;
-  final String wear;
-  final String change;
-  final bool isPositive;
-  final String imageUrl;
-
-  const _HeatmapItem({
-    required this.name,
-    required this.wear,
-    required this.change,
-    required this.isPositive,
-    required this.imageUrl,
-  });
+class _HeatmapRow extends StatelessWidget {
+  final _MoverItem item;
+  const _HeatmapRow({required this.item});
 
   @override
   Widget build(BuildContext context) {
+    final isPositive = item.changePercent >= 0;
     final color = isPositive ? _green : _red;
+    final pctStr =
+        '${isPositive ? '+' : ''}${item.changePercent.toStringAsFixed(1)}%';
 
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
@@ -744,53 +935,77 @@ class _HeatmapItem extends StatelessWidget {
           // Item image
           ClipRRect(
             borderRadius: BorderRadius.circular(8),
-            child: Image.network(
-              imageUrl,
-              width: 52,
-              height: 52,
-              fit: BoxFit.cover,
-              errorBuilder: (_, _, _) => Container(
-                width: 52,
-                height: 52,
-                color: const Color(0xFF1A3520),
-                child: const Icon(Icons.image_not_supported_outlined, color: _textDim, size: 22),
-              ),
-            ),
+            child: item.imageUrl != null
+                ? Image.network(
+                    proxyImageUrl(item.imageUrl),
+                    width: 52,
+                    height: 52,
+                    fit: BoxFit.cover,
+                    errorBuilder: (_, _, _) => _imgPlaceholder(),
+                  )
+                : _imgPlaceholder(),
           ),
           const SizedBox(width: 12),
 
-          // Name + wear
+          // Name + price
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
-                  name,
+                  item.name,
                   style: const TextStyle(
                     color: Colors.white,
                     fontSize: 15,
                     fontWeight: FontWeight.w600,
                   ),
+                  overflow: TextOverflow.ellipsis,
                 ),
                 const SizedBox(height: 4),
                 Text(
-                  '$wear • $change',
+                  '\$${item.currentPrice.toStringAsFixed(2)}',
                   style: TextStyle(color: _textDim, fontSize: 12),
                 ),
               ],
             ),
           ),
 
-          // Trend icon
-          Icon(
-            isPositive ? Icons.trending_up_rounded : Icons.trending_down_rounded,
-            color: color,
-            size: 24,
+          // % change + trend icon
+          Column(
+            crossAxisAlignment: CrossAxisAlignment.end,
+            children: [
+              Icon(
+                isPositive
+                    ? Icons.trending_up_rounded
+                    : Icons.trending_down_rounded,
+                color: color,
+                size: 22,
+              ),
+              const SizedBox(height: 2),
+              Text(
+                pctStr,
+                style: TextStyle(
+                    color: color,
+                    fontSize: 13,
+                    fontWeight: FontWeight.w700),
+              ),
+            ],
           ),
         ],
       ),
     );
   }
+
+  Widget _imgPlaceholder() => Container(
+        width: 52,
+        height: 52,
+        decoration: BoxDecoration(
+          color: const Color(0xFF1A3520),
+          borderRadius: BorderRadius.circular(8),
+        ),
+        child: const Icon(Icons.image_not_supported_outlined,
+            color: _textDim, size: 22),
+      );
 }
 
 // ─────────────────────────────────────────
@@ -829,31 +1044,6 @@ class _GreenIconBox extends StatelessWidget {
         borderRadius: BorderRadius.circular(12),
       ),
       child: Icon(icon, color: Colors.black, size: 28),
-    );
-  }
-}
-
-class _Chip extends StatelessWidget {
-  final String label;
-  const _Chip(this.label);
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-      decoration: BoxDecoration(
-        border: Border.all(color: _cardBorder, width: 1.5),
-        borderRadius: BorderRadius.circular(6),
-      ),
-      child: Text(
-        label,
-        style: const TextStyle(
-          color: _green,
-          fontSize: 11,
-          fontWeight: FontWeight.w700,
-          letterSpacing: 1.0,
-        ),
-      ),
     );
   }
 }
