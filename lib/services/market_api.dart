@@ -26,9 +26,15 @@ class MarketApi {
     return null;
   }
 
-  /// Bild-Proxy-URL
+  /// Bild-Proxy-URL — baut fehlende Steam-CDN-Basis ein wenn nötig
   static String proxyImageUrl(String originalUrl) {
-    final encoded = Uri.encodeComponent(originalUrl);
+    String fullUrl = originalUrl;
+    if (!originalUrl.startsWith('http')) {
+      final path = originalUrl.startsWith('/') ? originalUrl : '/$originalUrl';
+      fullUrl =
+          'https://community.cloudflare.steamstatic.com/economy/image$path';
+    }
+    final encoded = Uri.encodeComponent(fullUrl);
     return '$_proxyImageBase?url=$encoded';
   }
 
