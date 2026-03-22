@@ -5,12 +5,16 @@
 const { setGlobalOptions } = require("firebase-functions/v2/options");
 const { onRequest } = require("firebase-functions/v2/https");
 const { onSchedule } = require("firebase-functions/v2/scheduler");
+const { defineSecret } = require("firebase-functions/params");
 const logger = require("firebase-functions/logger");
 const axios = require("axios");
 const { initializeApp, getApps } = require("firebase-admin/app");
 const { getFirestore, FieldValue } = require("firebase-admin/firestore");
 
 if (getApps().length === 0) initializeApp();
+
+const steamApiKey = defineSecret("STEAM_API_KEY");
+
 const SKINPORT_CACHE_MS = 5 * 60 * 1000; // 5 Minuten
 const skinportCache = {};
 
@@ -436,6 +440,49 @@ exports.skinportBulkPrices = onRequest(async (req, res) => {
 
   res.json(result);
 });
+
+/**
+ * GET /resolveVanityUrl?vanityurl=CustomID
+ *
+ * Löst eine Steam Custom-URL (Vanity-URL) in eine SteamID64 auf.
+ * Benötigt den Steam API Key (als Secret hinterlegt).
+ */
+exports.resolveVanityUrl = onRequest(
+  { secrets: [steamApiKey] },
+  async (req, res) => {
+    if (handleCors(req, res)) return;
+    if (req.method !== "GET") {
+      res.status(405).json({ error: "Use GET" });
+      return;
+    }
+
+    const vanityurl = req.query.vanityurl;
+    if (!vanityurl) {
+      res.status(400).json({ error: "vanityurl parameter required" });
+      return;
+    }
+
+    try {
+      const response = await axios.get(
+        "https://api.steampowered.com/ISteamUser/ResolveVanityURL/v1/",
+        {
+          params: { key: steamApiKey.value(), vanityurl },
+          timeout: 8000,
+        }
+      );
+
+      const result = response.data?.response;
+      if (result?.success === 1) {
+        res.json({ steamId: result.steamid });
+      } else {
+        res.status(404).json({ error: "Custom-URL nicht gefunden." });
+      }
+    } catch (err) {
+      logger.error("resolveVanityUrl error", err.message);
+      res.status(500).json({ error: "Fehler beim Auflösen der Custom-URL." });
+    }
+  }
+);
 
 // Proxy für das CS2-Inventar (App 730, Context 2)
 exports.steamInventory = onRequest(async (req, res) => {

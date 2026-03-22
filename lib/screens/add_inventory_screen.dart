@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:url_launcher/url_launcher.dart';
 import '../main.dart' show fetchCsInventory, Item;
+import '../services/market_api.dart';
 
 // ── Theme colors (matching app-wide palette)
 const Color _bg = Color(0xFF060E06);
@@ -37,26 +38,49 @@ class _InventorySetupScreenState extends State<InventorySetupScreen> {
     super.dispose();
   }
 
+  /// Extrahiert SteamID64 oder Vanity-Namen aus einer Steam-URL.
+  /// Unterstützt: /profiles/76561198..., /id/CustomID, oder rohe ID/Vanity.
+  String? _extractSteamId64FromUrl(String input) {
+    final match = RegExp(r'steamcommunity\.com/profiles/(\d{15,20})').firstMatch(input);
+    return match?.group(1);
+  }
+
+  String _extractVanity(String input) {
+    final match = RegExp(r'steamcommunity\.com/id/([^/?\s]+)').firstMatch(input);
+    return match != null ? match.group(1)! : input;
+  }
+
+  bool _isSteamId64(String input) => RegExp(r'^\d{15,20}$').hasMatch(input);
+
   Future<void> _loadInventory() async {
-    final id = _controller.text.trim();
-    if (id.isEmpty) {
-      setState(() => _error = 'Bitte gib deine SteamID64 ein.');
-      return;
-    }
-    if (!RegExp(r'^\d{15,20}$').hasMatch(id)) {
-      setState(() => _error = 'Ungültige SteamID64. Sie sollte mit 7656119... beginnen.');
+    final raw = _controller.text.trim();
+    if (raw.isEmpty) {
+      setState(() => _error = 'Bitte gib deine Steam-ID oder Custom-URL ein.');
       return;
     }
 
-    setState(() {
-      _loading = true;
-      _error = null;
-    });
+    setState(() { _loading = true; _error = null; });
 
+    String steamId;
     try {
-      final items = await fetchCsInventory(id);
+      final fromProfileUrl = _extractSteamId64FromUrl(raw);
+      if (fromProfileUrl != null) {
+        steamId = fromProfileUrl;
+      } else if (_isSteamId64(raw)) {
+        steamId = raw;
+      } else {
+        final vanity = _extractVanity(raw);
+        final resolved = await MarketApi.resolveVanityUrl(vanity);
+        if (resolved == null) {
+          setState(() => _error = 'Custom-URL "$vanity" nicht gefunden. Bitte SteamID64 verwenden.');
+          return;
+        }
+        steamId = resolved;
+      }
+
+      final items = await fetchCsInventory(steamId);
       if (!mounted) return;
-      widget.onInventoryLoaded(id, items);
+      widget.onInventoryLoaded(steamId, items);
     } catch (e) {
       if (!mounted) return;
       String msg = e.toString();
@@ -138,7 +162,7 @@ class _InventorySetupScreenState extends State<InventorySetupScreen> {
                     const SizedBox(height: 12),
 
                     const Text(
-                      'Gib deine Steam-ID (76561...) ein, um deine Skins zu synchronisieren und deinen Inventarwert zu berechnen.',
+                      'Gib deine Steam-ID (76561...) oder Custom-URL (steamcommunity.com/id/...) ein, um deine Skins zu synchronisieren.',
                       textAlign: TextAlign.center,
                       style: TextStyle(
                         color: _textDim,
@@ -160,7 +184,7 @@ class _InventorySetupScreenState extends State<InventorySetupScreen> {
                   children: [
                     // Label
                     const Text(
-                      'STEAM-ID (STEAMID64)',
+                      'STEAM-ID ODER CUSTOM-URL',
                       style: TextStyle(
                         color: _green,
                         fontSize: 11,
@@ -422,7 +446,7 @@ class _SteamIdInputState extends State<_SteamIdInput> {
         controller: widget.controller,
         focusNode: widget.focusNode,
         enabled: widget.enabled,
-        keyboardType: TextInputType.number,
+        keyboardType: TextInputType.url,
         onSubmitted: widget.onSubmitted,
         style: const TextStyle(
           color: Colors.white,
@@ -430,7 +454,7 @@ class _SteamIdInputState extends State<_SteamIdInput> {
           fontWeight: FontWeight.w500,
         ),
         decoration: InputDecoration(
-          hintText: '76561198...',
+          hintText: '76561198... oder CustomID',
           hintStyle: const TextStyle(color: _textDim, fontSize: 16),
           suffixIcon: const Icon(
             Icons.fingerprint_rounded,
