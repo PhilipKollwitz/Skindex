@@ -81,19 +81,24 @@ class PortfolioStorage {
   /// Speichert einen Tages-Snapshot (idempotent, überschreibt gleichen Tag).
   static Future<void> appendValueHistory(
     String steamId,
-    double totalValue,
-  ) async {
+    double totalValue, {
+    Map<String, double>? itemPrices,
+  }) async {
     if (totalValue <= 0) return;
     final today = DateTime.now().toIso8601String().substring(0, 10);
+    final data = <String, dynamic>{
+      'timestamp': FieldValue.serverTimestamp(),
+      'totalValue': totalValue,
+    };
+    if (itemPrices != null && itemPrices.isNotEmpty) {
+      data['itemPrices'] = itemPrices;
+    }
     await _db
         .collection('portfolioHistory')
         .doc(steamId)
         .collection('snapshots')
         .doc(today)
-        .set({
-      'timestamp': FieldValue.serverTimestamp(),
-      'totalValue': totalValue,
-    });
+        .set(data);
   }
 
   /// Lädt alle gespeicherten Wert-Snapshots chronologisch.

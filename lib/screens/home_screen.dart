@@ -360,14 +360,6 @@ class _HomeTabState extends State<_HomeTab> {
 
           const SizedBox(height: 20),
 
-          // Market ticker
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 20),
-            child: _MarketTicker(),
-          ),
-
-          const SizedBox(height: 20),
-
           // Items suchen card
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: 16),
@@ -538,72 +530,6 @@ class _Header extends StatelessWidget {
 }
 
 // ─────────────────────────────────────────
-// Market Ticker
-// ─────────────────────────────────────────
-class _MarketTicker extends StatelessWidget {
-  @override
-  Widget build(BuildContext context) {
-    return Row(
-      children: [
-        _TickerPill(
-          child: Row(
-            mainAxisSize: MainAxisSize.min,
-            children: const [
-              Icon(Icons.show_chart_rounded, color: _green, size: 16),
-              SizedBox(width: 6),
-              Text('MARKT', style: _tickerLabelStyle),
-              SizedBox(width: 6),
-              Text('↑2.4%',
-                  style: TextStyle(
-                      color: _green,
-                      fontSize: 13,
-                      fontWeight: FontWeight.w700)),
-              SizedBox(width: 6),
-              Text('MARKT +2.4%', style: _tickerLabelStyle),
-            ],
-          ),
-        ),
-        const SizedBox(width: 10),
-        _TickerPill(
-          child: Row(
-            mainAxisSize: MainAxisSize.min,
-            children: const [
-              Icon(Icons.history_rounded, color: _green, size: 14),
-              SizedBox(width: 6),
-              Text('VOR 2', style: _tickerLabelStyle),
-            ],
-          ),
-        ),
-      ],
-    );
-  }
-}
-
-const _tickerLabelStyle = TextStyle(
-  color: _green,
-  fontSize: 12,
-  fontWeight: FontWeight.w600,
-  letterSpacing: 0.5,
-);
-
-class _TickerPill extends StatelessWidget {
-  final Widget child;
-  const _TickerPill({required this.child});
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 9),
-      decoration: BoxDecoration(
-        border: Border.all(color: _cardBorder, width: 1.5),
-        borderRadius: BorderRadius.circular(50),
-        color: _cardBg,
-      ),
-      child: child,
-    );
-  }
-}
-
 // ─────────────────────────────────────────
 // Items suchen card
 // ─────────────────────────────────────────
@@ -818,7 +744,7 @@ class _HeatmapSection extends StatelessWidget {
         Row(
           children: [
             const Text(
-              'MARKT-HEATMAP',
+              'TOP MOVER',
               style: TextStyle(
                 color: _green,
                 fontSize: 13,
@@ -873,7 +799,7 @@ class _HeatmapSection extends StatelessWidget {
                             const SizedBox(height: 12),
                             Text(
                               hasInventory
-                                  ? 'Preisveränderungen werden sichtbar\nsobald der Cron-Job läuft.'
+                                  ? 'Öffne dein Inventar um\nPreisveränderungen zu laden.'
                                   : 'Kein Inventar verknüpft.',
                               textAlign: TextAlign.center,
                               style: const TextStyle(

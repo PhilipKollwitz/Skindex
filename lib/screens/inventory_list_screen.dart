@@ -96,7 +96,7 @@ class _InventoryListScreenState extends State<InventoryListScreen> {
 
       await PortfolioStorage.saveSteamProfile(widget.steamId, widget.items);
       await PortfolioStorage.saveInitialIfAbsent(widget.steamId, currentPriceMap);
-      await PortfolioStorage.appendValueHistory(widget.steamId, total);
+      await PortfolioStorage.appendValueHistory(widget.steamId, total, itemPrices: currentPriceMap);
 
       final init = await PortfolioStorage.loadInitialPrices(widget.steamId);
       if (!mounted || init == null) return;
