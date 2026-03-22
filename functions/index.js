@@ -256,17 +256,35 @@ exports.dailyPortfolioSnapshot = onSchedule(
   }
 );
 
-// ─── In-memory Icon-Cache (per Function Instance) ───────────────────────────
+// ─── Icon-Cache: in-memory + Firestore persistent ───────────────────────────
 const imageCache = {};
 
 async function fetchSteamIconUrl(marketHashName) {
+  // 1. In-memory cache
   if (imageCache[marketHashName] !== undefined) return imageCache[marketHashName];
+
+  const db = getFirestore();
+  const docRef = db.collection("iconCache").doc(
+    marketHashName.replace(/\//g, "_")
+  );
+
+  // 2. Firestore cache
+  try {
+    const snap = await docRef.get();
+    if (snap.exists) {
+      const cached = snap.data().iconUrl ?? null;
+      imageCache[marketHashName] = cached;
+      return cached;
+    }
+  } catch (_) { /* ignore */ }
+
+  // 3. Steam API (nur wenn nicht gecacht)
   try {
     const encoded = encodeURIComponent(marketHashName);
     const url =
       `https://steamcommunity.com/market/search/render/?appid=730&norender=1&count=1&query=${encoded}`;
     const resp = await axios.get(url, {
-      timeout: 5000,
+      timeout: 6000,
       headers: { "User-Agent": "Mozilla/5.0 (compatible; Skindex/1.0)" },
     });
     const results = resp.data?.results;
@@ -275,11 +293,15 @@ async function fetchSteamIconUrl(marketHashName) {
       if (iconHash) {
         const full = `https://community.cloudflare.steamstatic.com/economy/image/${iconHash}/360fx360f`;
         imageCache[marketHashName] = full;
+        // In Firestore speichern (fire-and-forget)
+        docRef.set({ iconUrl: full, name: marketHashName }).catch(() => {});
         return full;
       }
     }
   } catch (_) { /* ignore */ }
+
   imageCache[marketHashName] = null;
+  docRef.set({ iconUrl: null, name: marketHashName }).catch(() => {});
   return null;
 }
 
@@ -356,14 +378,22 @@ exports.skinportMarket = onRequest(async (req, res) => {
       item_page: i.item_page || null,
     }));
 
-  // Icons parallel holen (Fire-and-forget mit allSettled)
+  // Icons holen: zuerst alle aus Firestore/Memory-Cache, Steam nur für unbekannte
   const allNames = [
     ...new Set([
       ...rawDeals.map((i) => i.market_hash_name),
       ...rawTrending.map((i) => i.market_hash_name),
     ]),
   ];
-  await Promise.allSettled(allNames.map((n) => fetchSteamIconUrl(n)));
+  const uncached = allNames.filter((n) => imageCache[n] === undefined);
+  // Zuerst alle gecachten aus Firestore laden (parallel, kein Rate-Limit)
+  await Promise.allSettled(uncached.map((n) => fetchSteamIconUrl(n)));
+  // Für noch immer unbekannte: Steam sequenziell mit Pause
+  const stillMissing = allNames.filter((n) => imageCache[n] === undefined);
+  for (const n of stillMissing) {
+    await fetchSteamIconUrl(n);
+    await new Promise((r) => setTimeout(r, 300));
+  }
 
   const enrich = (i) => ({ ...i, icon_url: imageCache[i.market_hash_name] ?? null });
 
