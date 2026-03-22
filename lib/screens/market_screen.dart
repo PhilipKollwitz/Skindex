@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import '../services/market_api.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 // ── Theme colors (identisch mit anderen Screens)
 const Color _bg = Color(0xFF060E06);
@@ -24,7 +25,6 @@ class _MarketScreenState extends State<MarketScreen> {
   List<MarketTrend> _trending = [];
   bool _loading = true;
   String? _error;
-  String _selectedCategory = 'Alle';
 
   @override
   void initState() {
@@ -56,63 +56,6 @@ class _MarketScreenState extends State<MarketScreen> {
     }
   }
 
-  List<MarketDeal> get _filteredDeals {
-    if (_selectedCategory == 'Alle') return _deals;
-    return _deals.where((d) => _matchesCategory(d.marketHashName)).toList();
-  }
-
-  bool _matchesCategory(String name) {
-    switch (_selectedCategory) {
-      case 'Messer':
-        return name.contains('Knife') ||
-            name.contains('Karambit') ||
-            name.contains('Bayonet') ||
-            name.contains('Butterfly') ||
-            name.contains('Falchion') ||
-            name.contains('Huntsman') ||
-            name.contains('Bowie') ||
-            name.contains('Shadow Daggers') ||
-            name.contains('Flip') ||
-            name.contains('Gut ') ||
-            name.contains('Stiletto') ||
-            name.contains('Talon') ||
-            name.contains('Ursus') ||
-            name.contains('Navaja') ||
-            name.startsWith('M9 ');
-      case 'Handschuhe':
-        return name.contains('Gloves') ||
-            name.contains('Wraps') ||
-            name.contains('Hand Wraps');
-      case 'Gewehre':
-        return name.startsWith('AK-47') ||
-            name.startsWith('M4A') ||
-            name.startsWith('AWP') ||
-            name.startsWith('SG ') ||
-            name.startsWith('AUG') ||
-            name.startsWith('FAMAS') ||
-            name.startsWith('Galil') ||
-            name.startsWith('G3SG1') ||
-            name.startsWith('SSG') ||
-            name.startsWith('SCAR') ||
-            name.startsWith('XM1014') ||
-            name.startsWith('MAG-7') ||
-            name.startsWith('Nova') ||
-            name.startsWith('Sawed-Off');
-      case 'Pistolen':
-        return name.startsWith('Glock') ||
-            name.startsWith('USP') ||
-            name.startsWith('Desert Eagle') ||
-            name.startsWith('P250') ||
-            name.startsWith('Five-SeveN') ||
-            name.startsWith('Tec-9') ||
-            name.startsWith('CZ75') ||
-            name.startsWith('R8') ||
-            name.startsWith('P2000') ||
-            name.startsWith('Dual Berettas');
-      default:
-        return true;
-    }
-  }
 
   @override
   Widget build(BuildContext context) {
@@ -136,7 +79,6 @@ class _MarketScreenState extends State<MarketScreen> {
                             padding: const EdgeInsets.only(bottom: 24),
                             children: [
                               _buildMarktTrends(),
-                              _buildKategorien(),
                               _buildLiveAngebote(),
                             ],
                           ),
@@ -257,73 +199,11 @@ class _MarketScreenState extends State<MarketScreen> {
     );
   }
 
-  // ── Kategorien ────────────────────────────────────────────────────────────
-
-  Widget _buildKategorien() {
-    const cats = ['Alle', 'Messer', 'Handschuhe', 'Gewehre', 'Pistolen'];
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        const Padding(
-          padding: EdgeInsets.fromLTRB(16, 20, 16, 12),
-          child: Text(
-            'Beliebte Kategorien',
-            style: TextStyle(
-                color: Colors.white,
-                fontSize: 16,
-                fontWeight: FontWeight.bold),
-          ),
-        ),
-        SizedBox(
-          height: 40,
-          child: ListView.separated(
-            scrollDirection: Axis.horizontal,
-            padding: const EdgeInsets.symmetric(horizontal: 16),
-            itemCount: cats.length,
-            separatorBuilder: (_, __) => const SizedBox(width: 8),
-            itemBuilder: (_, i) {
-              final cat = cats[i];
-              final active = _selectedCategory == cat;
-              return GestureDetector(
-                onTap: () => setState(() => _selectedCategory = cat),
-                child: Container(
-                  padding: const EdgeInsets.symmetric(
-                      horizontal: 14, vertical: 8),
-                  decoration: BoxDecoration(
-                    color: active ? _green : Colors.transparent,
-                    border:
-                        Border.all(color: active ? _green : _cardBorder),
-                    borderRadius: BorderRadius.circular(20),
-                  ),
-                  child: Row(
-                    children: [
-                      Icon(_categoryIcon(cat),
-                          size: 14,
-                          color: active ? Colors.black : _green),
-                      const SizedBox(width: 6),
-                      Text(
-                        cat,
-                        style: TextStyle(
-                          color: active ? Colors.black : _green,
-                          fontWeight: FontWeight.w600,
-                          fontSize: 13,
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              );
-            },
-          ),
-        ),
-      ],
-    );
-  }
 
   // ── Live-Angebote ─────────────────────────────────────────────────────────
 
   Widget _buildLiveAngebote() {
-    final deals = _filteredDeals;
+    final deals = _deals;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -365,26 +245,15 @@ class _MarketScreenState extends State<MarketScreen> {
             padding: const EdgeInsets.symmetric(horizontal: 16),
             itemCount: deals.length,
             separatorBuilder: (_, __) => const SizedBox(height: 8),
-            itemBuilder: (_, i) => _DealCard(deal: deals[i]),
+            itemBuilder: (_, i) => _DealCard(deal: deals[i], onTap: () {
+              final url = MarketApi.skinportListingUrl(null, deals[i].marketHashName);
+              launchUrl(Uri.parse(url), mode: LaunchMode.externalApplication);
+            }),
           ),
       ],
     );
   }
 
-  IconData _categoryIcon(String cat) {
-    switch (cat) {
-      case 'Messer':
-        return Icons.hardware;
-      case 'Handschuhe':
-        return Icons.back_hand_outlined;
-      case 'Gewehre':
-        return Icons.remove;
-      case 'Pistolen':
-        return Icons.lens;
-      default:
-        return Icons.grid_view_rounded;
-    }
-  }
 }
 
 // ─────────────────────────────────────────
@@ -510,11 +379,14 @@ class _TrendCard extends StatelessWidget {
 // ─────────────────────────────────────────
 class _DealCard extends StatelessWidget {
   final MarketDeal deal;
-  const _DealCard({required this.deal});
+  final VoidCallback? onTap;
+  const _DealCard({required this.deal, this.onTap});
 
   @override
   Widget build(BuildContext context) {
-    return Container(
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
       padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(
         color: _cardBg,
@@ -591,7 +463,7 @@ class _DealCard extends StatelessWidget {
           ),
         ],
       ),
-    );
+    ));
   }
 
   Widget _buildBadge() {
