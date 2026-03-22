@@ -11,6 +11,21 @@ class MarketApi {
   static const String _skinportMarketBase =
       'https://europe-west1-skindex-97204.cloudfunctions.net/skinportMarket';
 
+  static const String _resolveVanityBase =
+      'https://europe-west1-skindex-97204.cloudfunctions.net/resolveVanityUrl';
+
+  /// Löst eine Steam Vanity-URL in eine SteamID64 auf.
+  /// Gibt null zurück wenn die URL nicht gefunden wurde.
+  static Future<String?> resolveVanityUrl(String vanityId) async {
+    final uri = Uri.parse('$_resolveVanityBase?vanityurl=${Uri.encodeComponent(vanityId)}');
+    final res = await http.get(uri).timeout(const Duration(seconds: 10));
+    if (res.statusCode == 200) {
+      final data = jsonDecode(res.body) as Map<String, dynamic>;
+      return data['steamId'] as String?;
+    }
+    return null;
+  }
+
   /// Bild-Proxy-URL
   static String proxyImageUrl(String originalUrl) {
     final encoded = Uri.encodeComponent(originalUrl);
