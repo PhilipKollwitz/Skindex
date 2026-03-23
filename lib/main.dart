@@ -15,10 +15,6 @@ void main() async {
   await Firebase.initializeApp(
     options: DefaultFirebaseOptions.currentPlatform,
   );
-  // Redirect-Result nach Google-Login verarbeiten
-  try {
-    await FirebaseAuth.instance.getRedirectResult();
-  } catch (_) {}
   runApp(const MyApp());
 }
 
@@ -412,7 +408,7 @@ Future<List<Item>> fetchCsInventory(String steamId64,
     final params = <String, String>{
       'steamId': id,
       'count': count.toString(),
-      if (lastAssetId != null) 'start_assetid': lastAssetId,
+      if (lastAssetId case final v?) 'start_assetid': v,
     };
 
     final uri = Uri.parse('$functionsBaseUrl/steamInventory')
