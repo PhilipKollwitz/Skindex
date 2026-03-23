@@ -17,6 +17,50 @@ const steamApiKey = defineSecret("STEAM_API_KEY");
 
 const SKINPORT_CACHE_MS = 5 * 60 * 1000; // 5 Minuten
 const skinportCache = {};
+const skinportFetching = {}; // currency -> in-flight Promise (dedup)
+
+/**
+ * Fetches the full Skinport items list for a given currency.
+ * Deduplicates concurrent requests: if a fetch is already in-flight,
+ * all callers await the same Promise instead of making separate API calls.
+ */
+async function getSkinportItems(currency) {
+  const now = Date.now();
+  const cached = skinportCache[currency];
+  if (cached && now - cached.ts < SKINPORT_CACHE_MS) {
+    return cached.items;
+  }
+
+  // Already fetching? Wait for the same promise.
+  if (skinportFetching[currency]) {
+    return skinportFetching[currency];
+  }
+
+  // Start new fetch and store the promise so concurrent callers share it.
+  skinportFetching[currency] = (async () => {
+    try {
+      const params = new URLSearchParams({ app_id: "730", currency });
+      const apiResp = await axios.get(
+        `https://api.skinport.com/v1/items?${params.toString()}`,
+        {
+          timeout: 15000,
+          headers: {
+            "Accept-Encoding": "br, gzip, deflate",
+            "User-Agent": "Mozilla/5.0 (compatible; Skindex/1.0)",
+          },
+          decompress: true,
+        }
+      );
+      const items = Array.isArray(apiResp.data) ? apiResp.data : [];
+      skinportCache[currency] = { ts: Date.now(), items };
+      return items;
+    } finally {
+      delete skinportFetching[currency];
+    }
+  })();
+
+  return skinportFetching[currency];
+}
 
 // Region anpassen, wenn du willst (z.B. europe-west1)
 setGlobalOptions({
