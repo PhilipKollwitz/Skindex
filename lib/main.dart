@@ -63,6 +63,20 @@ const String proxyImageFunctionUrl = '$cloudFunctionsBase/proxyImage';
 const String functionsBaseUrl =
     'https://europe-west1-skindex-97204.cloudfunctions.net';
 
+/// Gibt das Währungssymbol für einen Währungscode zurück.
+String currencySymbol(String code) {
+  switch (code.toUpperCase()) {
+    case 'EUR': return '€';
+    case 'GBP': return '£';
+    case 'CNY': return '¥';
+    case 'RUB': return '₽';
+    case 'BRL': return r'R$';
+    case 'CAD': return r'CA$';
+    case 'AUD': return r'AU$';
+    default: return r'$'; // USD + fallback
+  }
+}
+
 /// Währungen (wie in deinem Python-Code)
 const Map<String, int> currencyMap = {
   'EUR (€)': 3,

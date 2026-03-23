@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:fl_chart/fl_chart.dart';
-import '../main.dart' show Item, SkinportPriceResult, buildMarketHashName, proxyImageUrl;
+import '../main.dart' show Item, SkinportPriceResult, buildMarketHashName, proxyImageUrl, currencySymbol;
 import '../services/portfolio_storage.dart';
 
 // ── Theme colors
@@ -19,6 +19,7 @@ class PortfolioScreen extends StatefulWidget {
   final List<Item> items;
   final Map<String, SkinportPriceResult> currentPrices;
   final Map<String, double> initialPrices; // marketHashName → initial price
+  final String currency;
 
   const PortfolioScreen({
     super.key,
@@ -26,6 +27,7 @@ class PortfolioScreen extends StatefulWidget {
     required this.items,
     required this.currentPrices,
     required this.initialPrices,
+    this.currency = 'EUR',
   });
 
   @override
@@ -198,7 +200,7 @@ class _PortfolioScreenState extends State<PortfolioScreen> {
                 ),
                 const SizedBox(height: 6),
                 Text(
-                  '\$${current.toStringAsFixed(2).replaceAllMapped(RegExp(r'(\d{1,3})(?=(\d{3})+(?!\d))'), (m) => '${m[1]},')}',
+                  '${currencySymbol(widget.currency)}${current.toStringAsFixed(2).replaceAllMapped(RegExp(r'(\d{1,3})(?=(\d{3})+(?!\d))'), (m) => '${m[1]},')}',
                   style: const TextStyle(
                     color: Colors.white,
                     fontSize: 38,
@@ -235,7 +237,7 @@ class _PortfolioScreenState extends State<PortfolioScreen> {
                           ),
                           const SizedBox(width: 4),
                           Text(
-                            '${isPositive ? '+' : ''}\$${_changeValue.abs().toStringAsFixed(2)} (${_changePercent.abs().toStringAsFixed(2)}%)',
+                            '${isPositive ? '+' : ''}${currencySymbol(widget.currency)}${_changeValue.abs().toStringAsFixed(2)} (${_changePercent.abs().toStringAsFixed(2)}%)',
                             style: TextStyle(
                               color: isPositive ? _green : _red,
                               fontSize: 12,
@@ -395,7 +397,7 @@ class _PortfolioScreenState extends State<PortfolioScreen> {
             getTooltipColor: (_) => const Color(0xFF0D2A14),
             getTooltipItems: (spots) => spots
                 .map((s) => LineTooltipItem(
-                      '\$${s.y.toStringAsFixed(2)}',
+                      '${currencySymbol(widget.currency)}${s.y.toStringAsFixed(2)}',
                       const TextStyle(
                           color: _green,
                           fontSize: 12,
@@ -489,6 +491,7 @@ class _PortfolioScreenState extends State<PortfolioScreen> {
           item: item,
           currentPrice: currentPrice,
           changePercent: changePercent,
+          currency: widget.currency,
         );
       },
     );
@@ -517,11 +520,13 @@ class _AssetRow extends StatelessWidget {
   final Item item;
   final double? currentPrice;
   final double? changePercent;
+  final String currency;
 
   const _AssetRow({
     required this.item,
     required this.currentPrice,
     required this.changePercent,
+    this.currency = 'EUR',
   });
 
   String get _displayName {
@@ -613,7 +618,7 @@ class _AssetRow extends StatelessWidget {
             children: [
               Text(
                 currentPrice != null
-                    ? '\$${currentPrice!.toStringAsFixed(2)}'
+                    ? '${currencySymbol(currency)}${currentPrice!.toStringAsFixed(2)}'
                     : '—',
                 style: const TextStyle(
                   color: Colors.white,

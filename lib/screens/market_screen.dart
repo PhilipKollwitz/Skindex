@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import '../services/market_api.dart';
 import 'package:url_launcher/url_launcher.dart';
+import '../main.dart' show currencySymbol;
 
 // ── Theme colors (identisch mit anderen Screens)
 const Color _bg = Color(0xFF060E06);
@@ -14,7 +15,8 @@ const Color _red = Color(0xFFEF4444);
 // Market Screen
 // ─────────────────────────────────────────
 class MarketScreen extends StatefulWidget {
-  const MarketScreen({super.key});
+  final String currency;
+  const MarketScreen({super.key, this.currency = 'EUR'});
 
   @override
   State<MarketScreen> createState() => _MarketScreenState();
@@ -38,7 +40,7 @@ class _MarketScreenState extends State<MarketScreen> {
       _error = null;
     });
     try {
-      final data = await MarketApi.fetchMarketData();
+      final data = await MarketApi.fetchMarketData(currency: widget.currency);
       if (mounted) {
         setState(() {
           _deals = data.deals;
@@ -192,7 +194,7 @@ class _MarketScreenState extends State<MarketScreen> {
                   scrollDirection: Axis.horizontal,
                   padding: const EdgeInsets.symmetric(horizontal: 16),
                   itemCount: _trending.length,
-                  itemBuilder: (_, i) => _TrendCard(item: _trending[i]),
+                  itemBuilder: (_, i) => _TrendCard(item: _trending[i], currency: widget.currency),
                 ),
         ),
       ],
@@ -244,8 +246,8 @@ class _MarketScreenState extends State<MarketScreen> {
             physics: const NeverScrollableScrollPhysics(),
             padding: const EdgeInsets.symmetric(horizontal: 16),
             itemCount: deals.length,
-            separatorBuilder: (_, __) => const SizedBox(height: 8),
-            itemBuilder: (_, i) => _DealCard(deal: deals[i], onTap: () {
+            separatorBuilder: (_, _) => const SizedBox(height: 8),
+            itemBuilder: (_, i) => _DealCard(deal: deals[i], currency: widget.currency, onTap: () {
               final url = MarketApi.skinportListingUrl(null, deals[i].marketHashName);
               launchUrl(Uri.parse(url), mode: LaunchMode.externalApplication);
             }),
@@ -261,7 +263,8 @@ class _MarketScreenState extends State<MarketScreen> {
 // ─────────────────────────────────────────
 class _TrendCard extends StatelessWidget {
   final MarketTrend item;
-  const _TrendCard({required this.item});
+  final String currency;
+  const _TrendCard({required this.item, required this.currency});
 
   @override
   Widget build(BuildContext context) {
@@ -291,7 +294,7 @@ class _TrendCard extends StatelessWidget {
                   ? Image.network(
                       MarketApi.proxyImageUrl(item.iconUrl!),
                       fit: BoxFit.contain,
-                      errorBuilder: (_, __, _) => _imgPlaceholder(),
+                      errorBuilder: (_, _, _) => _imgPlaceholder(),
                     )
                   : _imgPlaceholder(),
             ),
@@ -346,7 +349,7 @@ class _TrendCard extends StatelessWidget {
                       ),
                     ),
                     Text(
-                      '${item.suggestedPrice.toStringAsFixed(0)}€',
+                      '${currencySymbol(currency)}${item.suggestedPrice.toStringAsFixed(0)}',
                       style: const TextStyle(
                           color: Colors.white, fontSize: 11),
                     ),
@@ -379,8 +382,9 @@ class _TrendCard extends StatelessWidget {
 // ─────────────────────────────────────────
 class _DealCard extends StatelessWidget {
   final MarketDeal deal;
+  final String currency;
   final VoidCallback? onTap;
-  const _DealCard({required this.deal, this.onTap});
+  const _DealCard({required this.deal, required this.currency, this.onTap});
 
   @override
   Widget build(BuildContext context) {
@@ -409,7 +413,7 @@ class _DealCard extends StatelessWidget {
                   ? Image.network(
                       MarketApi.proxyImageUrl(deal.iconUrl!),
                       fit: BoxFit.contain,
-                      errorBuilder: (_, __, _) => _imgPlaceholder(),
+                      errorBuilder: (_, _, _) => _imgPlaceholder(),
                     )
                   : _imgPlaceholder(),
             ),
@@ -455,7 +459,7 @@ class _DealCard extends StatelessWidget {
           const SizedBox(width: 8),
           // Preis
           Text(
-            '${deal.minPrice.toStringAsFixed(2)}€',
+            '${currencySymbol(currency)}${deal.minPrice.toStringAsFixed(2)}',
             style: const TextStyle(
                 color: _green,
                 fontWeight: FontWeight.bold,
