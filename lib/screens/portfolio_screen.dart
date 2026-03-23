@@ -136,7 +136,7 @@ class _PortfolioScreenState extends State<PortfolioScreen> {
     final current = _currentTotal;
     final filtered = _filteredHistory;
 
-    return DefaultTextStyle(
+    return DefaultTextStyle.merge(
       style: const TextStyle(decoration: TextDecoration.none),
       child: Container(
       color: _bg,
@@ -295,9 +295,9 @@ class _PortfolioScreenState extends State<PortfolioScreen> {
 
           // ── Chart
           SizedBox(
-            height: 175,
+            height: 150,
             child: Padding(
-              padding: const EdgeInsets.fromLTRB(8, 0, 8, 4),
+              padding: const EdgeInsets.symmetric(horizontal: 8),
               child: _loadingHistory
                   ? const Center(
                       child: CircularProgressIndicator(
@@ -307,6 +307,31 @@ class _PortfolioScreenState extends State<PortfolioScreen> {
                       : _buildChart(filtered),
             ),
           ),
+
+          // ── Datum-Labels unterhalb des Charts
+          if (!_loadingHistory && _filteredHistory.length >= 2)
+            Padding(
+              padding: const EdgeInsets.fromLTRB(12, 4, 12, 0),
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  Text(
+                    _fmtDate(_filteredHistory.first.timestamp),
+                    style: const TextStyle(
+                        color: _textDim,
+                        fontSize: 10,
+                        decoration: TextDecoration.none),
+                  ),
+                  Text(
+                    _fmtDate(_filteredHistory.last.timestamp),
+                    style: const TextStyle(
+                        color: _textDim,
+                        fontSize: 10,
+                        decoration: TextDecoration.none),
+                  ),
+                ],
+              ),
+            ),
 
           const SizedBox(height: 20),
 
@@ -321,18 +346,6 @@ class _PortfolioScreenState extends State<PortfolioScreen> {
                     color: Colors.white,
                     fontSize: 18,
                     fontWeight: FontWeight.bold,
-                  ),
-                ),
-                const Spacer(),
-                GestureDetector(
-                  onTap: () {},
-                  child: const Text(
-                    'Alle anzeigen →',
-                    style: TextStyle(
-                      color: _green,
-                      fontSize: 13,
-                      fontWeight: FontWeight.w600,
-                    ),
                   ),
                 ),
               ],
@@ -358,7 +371,6 @@ class _PortfolioScreenState extends State<PortfolioScreen> {
     final minVal = data.map((s) => s.totalValue).reduce((a, b) => a < b ? a : b);
     final maxVal = data.map((s) => s.totalValue).reduce((a, b) => a > b ? a : b);
     final padding = (maxVal - minVal) * 0.15 + 1;
-    final lastIdx = (data.length - 1).toDouble();
 
     final spots = data.asMap().entries.map((e) {
       return FlSpot(e.key.toDouble(), e.value.totalValue);
@@ -374,40 +386,8 @@ class _PortfolioScreenState extends State<PortfolioScreen> {
           leftTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
           rightTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
           topTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
-          bottomTitles: AxisTitles(
-            sideTitles: SideTitles(
-              showTitles: true,
-              reservedSize: 28,
-              interval: lastIdx > 0 ? lastIdx : 1,
-              getTitlesWidget: (value, meta) {
-                if (value == 0) {
-                  return Align(
-                    alignment: Alignment.centerLeft,
-                    child: Padding(
-                      padding: const EdgeInsets.only(top: 4),
-                      child: Text(_fmtDate(data.first.timestamp),
-                          style: const TextStyle(
-                              color: _textDim,
-                              fontSize: 10,
-                              decoration: TextDecoration.none)),
-                    ),
-                  );
-                } else if (value == lastIdx) {
-                  return Align(
-                    alignment: Alignment.centerRight,
-                    child: Padding(
-                      padding: const EdgeInsets.only(top: 4),
-                      child: Text(_fmtDate(data.last.timestamp),
-                          style: const TextStyle(
-                              color: _textDim,
-                              fontSize: 10,
-                              decoration: TextDecoration.none)),
-                    ),
-                  );
-                }
-                return const SizedBox.shrink();
-              },
-            ),
+          bottomTitles: const AxisTitles(
+            sideTitles: SideTitles(showTitles: false),
           ),
         ),
         lineTouchData: LineTouchData(
