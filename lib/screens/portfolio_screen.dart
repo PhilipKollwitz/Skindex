@@ -157,8 +157,8 @@ class _PortfolioScreenState extends State<PortfolioScreen> {
                       borderRadius: BorderRadius.circular(12),
                       border: Border.all(color: _cardBorder),
                     ),
-                    child: const Icon(Icons.menu_rounded,
-                        color: _green, size: 20),
+                    child: const Icon(Icons.arrow_back_ios_new_rounded,
+                        color: _green, size: 18),
                   ),
                 ),
                 const Expanded(
@@ -293,9 +293,9 @@ class _PortfolioScreenState extends State<PortfolioScreen> {
 
           // ── Chart
           SizedBox(
-            height: 160,
+            height: 175,
             child: Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 8),
+              padding: const EdgeInsets.fromLTRB(8, 0, 8, 4),
               child: _loadingHistory
                   ? const Center(
                       child: CircularProgressIndicator(
@@ -375,7 +375,7 @@ class _PortfolioScreenState extends State<PortfolioScreen> {
           bottomTitles: AxisTitles(
             sideTitles: SideTitles(
               showTitles: true,
-              reservedSize: 22,
+              reservedSize: 28,
               interval: lastIdx > 0 ? lastIdx : 1,
               getTitlesWidget: (value, meta) {
                 String label = '';
@@ -588,6 +588,7 @@ class _AssetRow extends StatelessWidget {
                     color: Colors.white,
                     fontSize: 15,
                     fontWeight: FontWeight.w700,
+                    decoration: TextDecoration.none,
                   ),
                 ),
                 const SizedBox(height: 3),
@@ -602,6 +603,7 @@ class _AssetRow extends StatelessWidget {
                         ? const Color(0xFFCF6A32)
                         : _textDim,
                     fontSize: 12,
+                    decoration: TextDecoration.none,
                   ),
                 ),
               ],
@@ -622,6 +624,7 @@ class _AssetRow extends StatelessWidget {
                   color: Colors.white,
                   fontSize: 15,
                   fontWeight: FontWeight.w700,
+                  decoration: TextDecoration.none,
                 ),
               ),
               const SizedBox(height: 3),
@@ -633,6 +636,7 @@ class _AssetRow extends StatelessWidget {
                   color: changeColor,
                   fontSize: 12,
                   fontWeight: FontWeight.w600,
+                  decoration: TextDecoration.none,
                 ),
               ),
             ],
