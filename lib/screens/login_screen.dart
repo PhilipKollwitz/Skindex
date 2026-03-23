@@ -5,7 +5,6 @@ const Color _bgColor = Color(0xFF0D0D0D);
 const Color _accentGreen = Color(0xFF4ADE80);
 const Color _cardBg = Color(0xFF1C1C1C);
 const Color _subtitleColor = Color(0xFF9CA3AF);
-const Color _dividerColor = Color(0xFF374151);
 
 class LoginScreen extends StatefulWidget {
   const LoginScreen({super.key});
@@ -314,60 +313,6 @@ class _LoginCard extends StatelessWidget {
             ),
           ),
 
-          const SizedBox(height: 22),
-
-          const Row(
-            children: [
-              Expanded(child: Divider(color: _dividerColor, thickness: 1)),
-              Padding(
-                padding: EdgeInsets.symmetric(horizontal: 16),
-                child: Text(
-                  'ODER',
-                  style: TextStyle(
-                    color: _subtitleColor,
-                    fontSize: 11,
-                    fontWeight: FontWeight.w600,
-                    letterSpacing: 1.5,
-                  ),
-                ),
-              ),
-              Expanded(child: Divider(color: _dividerColor, thickness: 1)),
-            ],
-          ),
-
-          const SizedBox(height: 20),
-
-          GestureDetector(
-            onTap: loadingGoogle || loadingGuest ? null : onGuestLogin,
-            behavior: HitTestBehavior.opaque,
-            child: Padding(
-              padding: const EdgeInsets.symmetric(vertical: 4),
-              child: loadingGuest
-                  ? const SizedBox(
-                      height: 22,
-                      width: 22,
-                      child: CircularProgressIndicator(
-                        strokeWidth: 2,
-                        color: Colors.white,
-                      ),
-                    )
-                  : const Row(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
-                        Text(
-                          'Als Gast erkunden',
-                          style: TextStyle(
-                            color: Colors.white,
-                            fontSize: 15,
-                            fontWeight: FontWeight.w500,
-                          ),
-                        ),
-                        SizedBox(width: 6),
-                        Icon(Icons.arrow_forward, color: Colors.white, size: 16),
-                      ],
-                    ),
-            ),
-          ),
         ],
       ),
     );
