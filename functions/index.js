@@ -260,49 +260,54 @@ exports.dailyPortfolioSnapshot = onSchedule(
 const imageCache = {};
 
 async function fetchSteamIconUrl(marketHashName) {
-  // 1. In-memory cache
-  if (imageCache[marketHashName] !== undefined) return imageCache[marketHashName];
+  // 1. In-memory cache (only positive hits — never cache null so retries happen)
+  if (imageCache[marketHashName]) return imageCache[marketHashName];
 
   const db = getFirestore();
-  const docRef = db.collection("iconCache").doc(
-    marketHashName.replace(/\//g, "_")
-  );
+  const docKey = marketHashName.replace(/\//g, "_").replace(/[^a-zA-Z0-9_\-]/g, "x");
+  const docRef = db.collection("iconCache").doc(docKey);
 
-  // 2. Firestore cache
+  // 2. Firestore cache (only trust non-null entries)
   try {
     const snap = await docRef.get();
     if (snap.exists) {
-      const cached = snap.data().iconUrl ?? null;
-      imageCache[marketHashName] = cached;
-      return cached;
-    }
-  } catch (_) { /* ignore */ }
-
-  // 3. Steam API (nur wenn nicht gecacht)
-  try {
-    const encoded = encodeURIComponent(marketHashName);
-    const url =
-      `https://steamcommunity.com/market/search/render/?appid=730&norender=1&count=1&query=${encoded}`;
-    const resp = await axios.get(url, {
-      timeout: 6000,
-      headers: { "User-Agent": "Mozilla/5.0 (compatible; Skindex/1.0)" },
-    });
-    const results = resp.data?.results;
-    if (Array.isArray(results) && results.length > 0) {
-      const iconHash = results[0]?.asset_description?.icon_url;
-      if (iconHash) {
-        const full = `https://community.cloudflare.steamstatic.com/economy/image/${iconHash}/360fx360f`;
-        imageCache[marketHashName] = full;
-        // In Firestore speichern (fire-and-forget)
-        docRef.set({ iconUrl: full, name: marketHashName }).catch(() => {});
-        return full;
+      const cached = snap.data().iconUrl;
+      if (cached) {
+        imageCache[marketHashName] = cached;
+        return cached;
       }
     }
   } catch (_) { /* ignore */ }
 
-  imageCache[marketHashName] = null;
-  docRef.set({ iconUrl: null, name: marketHashName }).catch(() => {});
-  return null;
+  // 3. Steam Market search — fetch multiple results and find exact match
+  try {
+    const encoded = encodeURIComponent(marketHashName);
+    const url =
+      `https://steamcommunity.com/market/search/render/?appid=730&norender=1&count=10&search_descriptions=0&query=${encoded}`;
+    const resp = await axios.get(url, {
+      timeout: 8000,
+      headers: {
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
+        "Accept-Language": "en-US,en;q=0.9",
+      },
+    });
+    const results = resp.data?.results;
+    if (Array.isArray(results) && results.length > 0) {
+      // Prefer exact name match, fall back to first result
+      const match = results.find(
+        (r) => r.hash_name === marketHashName || r.name === marketHashName
+      ) || results[0];
+      const iconHash = match?.asset_description?.icon_url;
+      if (iconHash) {
+        const full = `https://community.cloudflare.steamstatic.com/economy/image/${iconHash}/360fx360f`;
+        imageCache[marketHashName] = full;
+        docRef.set({ iconUrl: full, name: marketHashName }).catch(() => {});
+        return full;
+      }
+    }
+  } catch (_) { /* ignore — will retry next request */ }
+
+  return null; // Do NOT cache null — allow retry on next request
 }
 
 /**
@@ -346,14 +351,8 @@ exports.skinportMarket = onRequest(async (req, res) => {
 
   const items = cacheEntry.items;
 
-  // Skinport liefert ein "image"-Feld pro Item (relativer Steam-Pfad oder volle URL)
-  const iconMap = {};
-  for (const i of items) {
-    if (i.image) iconMap[i.market_hash_name] = i.image;
-  }
-
   // Deals: min_price deutlich unter suggested_price
-  const deals = items
+  const rawDeals = items
     .filter((i) => i.min_price != null && i.suggested_price > 1 && i.quantity > 0)
     .map((i) => ({
       market_hash_name: i.market_hash_name,
@@ -361,13 +360,35 @@ exports.skinportMarket = onRequest(async (req, res) => {
       suggested_price: i.suggested_price,
       quantity: i.quantity,
       discount_pct: Math.round((1 - i.min_price / i.suggested_price) * 100),
-      icon_url: iconMap[i.market_hash_name] ?? null,
+      // Skinport may include "image" field (Steam CDN path) — use if available
+      _skinportImage: i.image || i.icon || null,
       item_page: i.item_page || null,
       updated_at: i.updated_at || null,
     }))
     .filter((i) => i.discount_pct >= 5)
     .sort((a, b) => b.discount_pct - a.discount_pct)
     .slice(0, 25);
+
+  // For items Skinport didn't provide an image for, look up via Steam + Firestore cache
+  const needsIcon = rawDeals
+    .filter((i) => !i._skinportImage && !imageCache[i.market_hash_name])
+    .map((i) => i.market_hash_name);
+
+  // Load Firestore/memory cache first (parallel — no rate limit)
+  await Promise.allSettled(needsIcon.map((n) => fetchSteamIconUrl(n)));
+
+  // Sequentially fetch remaining unknowns from Steam (rate-limit friendly)
+  const stillMissing = needsIcon.filter((n) => !imageCache[n]);
+  for (const n of stillMissing) {
+    await fetchSteamIconUrl(n);
+    await new Promise((r) => setTimeout(r, 200));
+  }
+
+  const deals = rawDeals.map((i) => {
+    const { _skinportImage, ...rest } = i;
+    const iconUrl = _skinportImage || imageCache[i.market_hash_name] || null;
+    return { ...rest, icon_url: iconUrl };
+  });
 
   res.json({
     deals,
