@@ -1,5 +1,5 @@
 import 'package:flutter/material.dart';
-import '../main.dart' show Item, fetchBulkSkinportPrices, SkinportPriceResult, buildMarketHashName, proxyImageUrl;
+import '../main.dart' show Item, fetchBulkSkinportPrices, SkinportPriceResult, buildMarketHashName, proxyImageUrl, currencySymbol;
 import '../services/portfolio_storage.dart';
 import 'portfolio_screen.dart';
 
@@ -18,12 +18,14 @@ class InventoryListScreen extends StatefulWidget {
   final String steamId;
   final List<Item> items;
   final VoidCallback onBack;
+  final String currency;
 
   const InventoryListScreen({
     super.key,
     required this.steamId,
     required this.items,
     required this.onBack,
+    this.currency = 'EUR',
   });
 
   @override
@@ -70,7 +72,7 @@ class _InventoryListScreenState extends State<InventoryListScreen> {
     } catch (_) {}
 
     final hashes = widget.items.map(buildMarketHashName).toList();
-    final bulk = await fetchBulkSkinportPrices(hashes);
+    final bulk = await fetchBulkSkinportPrices(hashes, currency: widget.currency);
     if (!mounted) return;
 
     // UI sofort freigeben — Items ohne Skinport-Preis zeigen "—"
@@ -236,6 +238,7 @@ class _InventoryListScreenState extends State<InventoryListScreen> {
                             items: widget.items,
                             currentPrices: _prices,
                             initialPrices: _initialPrices,
+                            currency: widget.currency,
                           ),
                         ),
                       )
@@ -280,7 +283,7 @@ class _InventoryListScreenState extends State<InventoryListScreen> {
                                   ),
                                 )
                               : Text(
-                                  '\$${_totalValue.toStringAsFixed(2)}',
+                                  '${currencySymbol(widget.currency)}${_totalValue.toStringAsFixed(2)}',
                                   style: const TextStyle(
                                     color: Colors.white,
                                     fontSize: 32,
@@ -388,6 +391,7 @@ class _InventoryListScreenState extends State<InventoryListScreen> {
                   item: item,
                   priceResult: price,
                   loading: _loadingPrices && price == null,
+                  currency: widget.currency,
                 );
               },
             ),
@@ -405,11 +409,13 @@ class _InventoryItemCard extends StatelessWidget {
   final Item item;
   final SkinportPriceResult? priceResult;
   final bool loading;
+  final String currency;
 
   const _InventoryItemCard({
     required this.item,
     required this.priceResult,
     required this.loading,
+    this.currency = 'EUR',
   });
 
   /// Wear aus market_hash_name parsen, z.B. "AK-47 | Redline (Field-Tested)" → "Field-Tested"
@@ -558,7 +564,7 @@ class _InventoryItemCard extends StatelessWidget {
                 )
               else if (price != null)
                 Text(
-                  '\$${price.toStringAsFixed(2)}',
+                  '${currencySymbol(currency)}${price.toStringAsFixed(2)}',
                   style: const TextStyle(
                     color: _green,
                     fontSize: 15,
