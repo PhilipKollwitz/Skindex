@@ -22,14 +22,14 @@ class _LoginScreenState extends State<LoginScreen> {
     setState(() => _loadingGoogle = true);
     try {
       final provider = GoogleAuthProvider();
-      await FirebaseAuth.instance.signInWithPopup(provider);
-      // StreamBuilder in main.dart navigiert automatisch weiter
+      await FirebaseAuth.instance.signInWithRedirect(provider);
+      // Auth-State-Stream in main.dart navigiert automatisch weiter nach Redirect
     } on FirebaseAuthException catch (e) {
       if (!mounted) return;
       _showError(e.message ?? 'Google-Anmeldung fehlgeschlagen.');
-    } catch (_) {
+    } catch (e) {
       if (!mounted) return;
-      _showError('Google-Anmeldung fehlgeschlagen.');
+      _showError(e.toString());
     } finally {
       if (mounted) setState(() => _loadingGoogle = false);
     }
