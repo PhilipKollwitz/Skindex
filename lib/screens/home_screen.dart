@@ -6,6 +6,7 @@ import 'search_screen.dart';
 import 'add_inventory_screen.dart';
 import 'inventory_list_screen.dart';
 import 'market_screen.dart';
+import 'profile_screen.dart';
 import '../main.dart' show Item, buildMarketHashName, proxyImageUrl;
 import '../services/portfolio_storage.dart';
 
@@ -33,11 +34,19 @@ class _HomeScreenState extends State<HomeScreen> {
   String? _steamId;
   List<Item> _inventoryItems = [];
   bool _checkingLinkedInventory = true;
+  String _currency = 'EUR';
 
   @override
   void initState() {
     super.initState();
     _checkLinkedInventory();
+    _loadCurrency();
+  }
+
+  Future<void> _loadCurrency() async {
+    final prefs = await SharedPreferences.getInstance();
+    final saved = prefs.getString('currency');
+    if (saved != null && mounted) setState(() => _currency = saved);
   }
 
   Future<void> _checkLinkedInventory() async {
@@ -152,7 +161,19 @@ class _HomeScreenState extends State<HomeScreen> {
             )
           : InventorySetupScreen(onInventoryLoaded: _onInventoryLoaded),
       const MarketScreen(),
-      const _PlaceholderTab(label: 'Profil', icon: Icons.person_outline),
+      ProfileScreen(
+        steamId: _steamId,
+        currency: _currency,
+        onCurrencyChanged: (c) async {
+          setState(() => _currency = c);
+          final prefs = await SharedPreferences.getInstance();
+          await prefs.setString('currency', c);
+        },
+        onRemoveInventory: () => setState(() {
+          _steamId = null;
+          _inventoryItems = [];
+        }),
+      ),
     ];
     return Scaffold(
       backgroundColor: _bg,
@@ -974,37 +995,3 @@ class _GreenIconBox extends StatelessWidget {
   }
 }
 
-// ─────────────────────────────────────────
-// Placeholder tabs
-// ─────────────────────────────────────────
-class _PlaceholderTab extends StatelessWidget {
-  final String label;
-  final IconData icon;
-  const _PlaceholderTab({required this.label, required this.icon});
-
-  @override
-  Widget build(BuildContext context) {
-    return Center(
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Icon(icon, color: _textDim, size: 48),
-          const SizedBox(height: 16),
-          Text(
-            label,
-            style: const TextStyle(
-              color: _textDim,
-              fontSize: 18,
-              fontWeight: FontWeight.w600,
-            ),
-          ),
-          const SizedBox(height: 8),
-          const Text(
-            'Demnächst verfügbar',
-            style: TextStyle(color: Color(0xFF3A5A3A), fontSize: 13),
-          ),
-        ],
-      ),
-    );
-  }
-}

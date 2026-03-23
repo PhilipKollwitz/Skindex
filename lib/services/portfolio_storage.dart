@@ -162,6 +162,13 @@ class PortfolioStorage {
     }, SetOptions(merge: true));
   }
 
+  /// Entfernt die Steam-ID Verknüpfung für diese UID.
+  static Future<void> unlinkUidFromSteamId(String uid) async {
+    await _db.collection('userProfiles').doc(uid).update({
+      'steamId': FieldValue.delete(),
+    });
+  }
+
   /// Gibt die Steam-ID zurück die mit dieser UID verknüpft ist, oder null.
   static Future<String?> getSteamIdForUid(String uid) async {
     try {
