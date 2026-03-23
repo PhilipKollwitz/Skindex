@@ -350,7 +350,15 @@ Future<Map<String, SkinportPriceResult>> fetchBulkSkinportPrices(
     ));
   }
 
-  final results = await Future.wait<Map<String, SkinportPriceResult>>(chunks.map((chunk) async {
+  double? toDouble(dynamic v) {
+    if (v == null) return null;
+    if (v is num) return v.toDouble();
+    return double.tryParse(v.toString().replaceAll(',', '.'));
+  }
+
+  // Sequenziell statt parallel: erstes Chunk füllt CF-Cache, Rest nutzt ihn
+  final combined = <String, SkinportPriceResult>{};
+  for (final chunk in chunks) {
     final uri = Uri.parse(skinportBulkPricesFunctionUrl).replace(
       queryParameters: {
         'hashes': chunk.join(','),
@@ -359,35 +367,20 @@ Future<Map<String, SkinportPriceResult>> fetchBulkSkinportPrices(
     );
     try {
       final res = await http.get(uri).timeout(const Duration(seconds: 20));
-      if (res.statusCode != 200) return <String, SkinportPriceResult>{};
+      if (res.statusCode != 200) continue;
       final data = jsonDecode(res.body) as Map<String, dynamic>;
-
-      double? toDouble(dynamic v) {
-        if (v == null) return null;
-        if (v is num) return v.toDouble();
-        return double.tryParse(v.toString().replaceAll(',', '.'));
-      }
-
-      return data.map((key, value) {
-        final v = value as Map<String, dynamic>;
-        return MapEntry(
-          key,
-          SkinportPriceResult(
-            currency: v['currency'] as String?,
-            minPrice: toDouble(v['min_price']),
-            maxPrice: toDouble(v['max_price']),
-            suggestedPrice: toDouble(v['suggested_price']),
-          ),
+      for (final entry in data.entries) {
+        final v = entry.value as Map<String, dynamic>;
+        combined[entry.key] = SkinportPriceResult(
+          currency: v['currency'] as String?,
+          minPrice: toDouble(v['min_price']),
+          maxPrice: toDouble(v['max_price']),
+          suggestedPrice: toDouble(v['suggested_price']),
         );
-      });
+      }
     } catch (_) {
-      return <String, SkinportPriceResult>{};
+      continue;
     }
-  }));
-
-  final combined = <String, SkinportPriceResult>{};
-  for (final map in results) {
-    combined.addAll(map);
   }
   return combined;
 }

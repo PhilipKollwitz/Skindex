@@ -104,8 +104,8 @@ class _SearchScreenState extends State<SearchScreen>
         result = await app.itemRepository.getItemsForType(typeKey);
       }
 
-      // Bulk-fetch prices and sort by price descending
-      final hashes = result.map(_mhn).toList();
+      // Bulk-fetch prices für max. 300 Items (3 sequenzielle Chunks à 100)
+      final hashes = result.take(300).map(_mhn).toList();
       final priceMap = await fetchBulkSkinportPrices(hashes, currency: widget.currency);
 
       // Sort: items with prices first (by price desc), then unprice items
