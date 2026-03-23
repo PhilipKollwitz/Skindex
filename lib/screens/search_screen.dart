@@ -1,7 +1,8 @@
 import 'package:flutter/material.dart';
 import '../main.dart' as app;
-import '../services/market_api.dart';
+import '../main.dart' show fetchBulkSkinportPrices, SkinportPriceResult, currencySymbol;
 import 'item_detail_screen.dart';
+
 const Color _cardBg = Color(0xFF0C1A0C);
 const Color _green = Color(0xFF4ADE80);
 const Color _cardBorder = Color(0xFF1A3520);
@@ -12,7 +13,8 @@ const Color _searchBg = Color(0xFF0F1F0F);
 // SearchScreen — embedded as a tab (no Scaffold)
 // ─────────────────────────────────────────
 class SearchScreen extends StatefulWidget {
-  const SearchScreen({super.key});
+  final String currency;
+  const SearchScreen({super.key, this.currency = 'EUR'});
 
   @override
   State<SearchScreen> createState() => _SearchScreenState();
@@ -24,8 +26,9 @@ class _SearchScreenState extends State<SearchScreen>
   final _searchCtrl = TextEditingController();
   String _query = '';
 
-  // Loaded item lists per tab index
+  // Items sorted by price, and their pre-loaded prices
   final Map<int, List<app.Item>> _items = {};
+  final Map<int, Map<String, SkinportPriceResult>> _prices = {};
   final Map<int, bool> _loading = {};
 
   static const _tabLabels = [
@@ -42,7 +45,7 @@ class _SearchScreenState extends State<SearchScreen>
   static const _tabTypeKeys = [
     'skin',
     'crate',
-    'gloves', // special: filtered from skin
+    'gloves',
     'sticker',
     'graffiti',
     'keychain',
@@ -67,6 +70,23 @@ class _SearchScreenState extends State<SearchScreen>
     super.dispose();
   }
 
+  bool _isGlove(String name) {
+    final n = name.toLowerCase();
+    return n.contains('gloves') || n.contains('hand wraps') || n.contains('wraps');
+  }
+
+  // Build the representative market hash name for price lookup
+  String _mhn(app.Item item) {
+    if (item.typeKey == 'skin' && item.wears.isNotEmpty) {
+      // Prefer Factory New, otherwise first wear
+      final wear = item.wears.contains('Factory New')
+          ? 'Factory New'
+          : item.wears.first;
+      return '${item.name} ($wear)';
+    }
+    return item.marketHashName ?? item.name;
+  }
+
   Future<void> _loadTab(int i) async {
     if (_items.containsKey(i) || (_loading[i] ?? false)) return;
     setState(() => _loading[i] = true);
@@ -83,19 +103,33 @@ class _SearchScreenState extends State<SearchScreen>
       } else {
         result = await app.itemRepository.getItemsForType(typeKey);
       }
-    } catch (_) {}
 
-    if (mounted) {
-      setState(() {
-        _items[i] = result;
-        _loading[i] = false;
+      // Bulk-fetch prices and sort by price descending
+      final hashes = result.map(_mhn).toList();
+      final priceMap = await fetchBulkSkinportPrices(hashes, currency: widget.currency);
+
+      // Sort: items with prices first (by price desc), then unprice items
+      result.sort((a, b) {
+        final pa = priceMap[_mhn(a)]?.suggestedPrice ?? -1;
+        final pb = priceMap[_mhn(b)]?.suggestedPrice ?? -1;
+        return pb.compareTo(pa);
       });
-    }
-  }
 
-  bool _isGlove(String name) {
-    final n = name.toLowerCase();
-    return n.contains('gloves') || n.contains('hand wraps') || n.contains('wraps');
+      if (mounted) {
+        setState(() {
+          _items[i] = result;
+          _prices[i] = priceMap;
+          _loading[i] = false;
+        });
+      }
+    } catch (_) {
+      if (mounted) {
+        setState(() {
+          _items[i] = result;
+          _loading[i] = false;
+        });
+      }
+    }
   }
 
   List<app.Item> _filteredForTab(int i) {
@@ -130,7 +164,6 @@ class _SearchScreenState extends State<SearchScreen>
                   ),
                 ),
               ),
-              _IconBtn(icon: Icons.tune_rounded),
             ],
           ),
         ),
@@ -215,6 +248,8 @@ class _SearchScreenState extends State<SearchScreen>
             controller: _tabs,
             children: List.generate(_tabLabels.length, (i) => _TabGrid(
               items: _filteredForTab(i),
+              prices: _prices[i] ?? {},
+              currency: widget.currency,
               loading: _loading[i] ?? (_items[i] == null),
             )),
           ),
@@ -229,9 +264,16 @@ class _SearchScreenState extends State<SearchScreen>
 // ─────────────────────────────────────────
 class _TabGrid extends StatelessWidget {
   final List<app.Item> items;
+  final Map<String, SkinportPriceResult> prices;
+  final String currency;
   final bool loading;
 
-  const _TabGrid({required this.items, required this.loading});
+  const _TabGrid({
+    required this.items,
+    required this.prices,
+    required this.currency,
+    required this.loading,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -255,7 +297,11 @@ class _TabGrid extends StatelessWidget {
         childAspectRatio: 0.72,
       ),
       itemCount: items.length,
-      itemBuilder: (ctx, i) => _ItemCard(item: items[i]),
+      itemBuilder: (ctx, i) => _ItemCard(
+        item: items[i],
+        prices: prices,
+        currency: currency,
+      ),
     );
   }
 }
@@ -265,7 +311,24 @@ class _TabGrid extends StatelessWidget {
 // ─────────────────────────────────────────
 class _ItemCard extends StatelessWidget {
   final app.Item item;
-  const _ItemCard({required this.item});
+  final Map<String, SkinportPriceResult> prices;
+  final String currency;
+
+  const _ItemCard({
+    required this.item,
+    required this.prices,
+    required this.currency,
+  });
+
+  String get _mhn {
+    if (item.typeKey == 'skin' && item.wears.isNotEmpty) {
+      final wear = item.wears.contains('Factory New')
+          ? 'Factory New'
+          : item.wears.first;
+      return '${item.name} ($wear)';
+    }
+    return item.marketHashName ?? item.name;
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -276,15 +339,8 @@ class _ItemCard extends StatelessWidget {
     final isStatTrak = item.name.startsWith('StatTrak™');
     final isSouvenir = item.name.startsWith('Souvenir');
 
-    // Market hash name for price lookup
-    final String mhn;
-    if (item.typeKey == 'skin' && item.wears.isNotEmpty) {
-      mhn = '${item.name} (${item.wears.first})';
-    } else {
-      mhn = item.marketHashName ?? item.name;
-    }
-
     final imgUrl = item.image != null ? app.proxyImageUrl(item.image) : null;
+    final price = prices[_mhn]?.suggestedPrice;
 
     return GestureDetector(
       onTap: () => Navigator.of(context).push(
@@ -314,7 +370,6 @@ class _ItemCard extends StatelessWidget {
                           )
                         : _ImgPlaceholder(),
                   ),
-                  // Badge
                   if (isStatTrak || isSouvenir)
                     Positioned(
                       top: 8,
@@ -358,76 +413,33 @@ class _ItemCard extends StatelessWidget {
                     ),
                   ),
                   const SizedBox(height: 8),
-                  // Price
-                  _PriceWidget(marketHashName: mhn),
+                  // Price (pre-loaded)
+                  const Text(
+                    'SKINPORT',
+                    style: TextStyle(
+                      color: _textDim,
+                      fontSize: 9,
+                      fontWeight: FontWeight.w700,
+                      letterSpacing: 1.0,
+                    ),
+                  ),
+                  const SizedBox(height: 2),
+                  Text(
+                    price != null
+                        ? '${currencySymbol(currency)}${price.toStringAsFixed(2)}'
+                        : '—',
+                    style: TextStyle(
+                      color: price != null ? _green : _textDim,
+                      fontSize: 15,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
                 ],
               ),
             ),
           ],
         ),
       ),
-    );
-  }
-}
-
-// ─────────────────────────────────────────
-// Price widget (lazy load per card)
-// ─────────────────────────────────────────
-class _PriceWidget extends StatefulWidget {
-  final String marketHashName;
-  const _PriceWidget({required this.marketHashName});
-
-  @override
-  State<_PriceWidget> createState() => _PriceWidgetState();
-}
-
-class _PriceWidgetState extends State<_PriceWidget> {
-  late Future<SkinportItem> _future;
-
-  @override
-  void initState() {
-    super.initState();
-    _future = MarketApi.fetchSkinportPrice(widget.marketHashName);
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return FutureBuilder<SkinportItem>(
-      future: _future,
-      builder: (ctx, snap) {
-        return Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            const Text(
-              'SKINPORT',
-              style: TextStyle(
-                color: _textDim,
-                fontSize: 9,
-                fontWeight: FontWeight.w700,
-                letterSpacing: 1.0,
-              ),
-            ),
-            const SizedBox(height: 2),
-            if (snap.connectionState == ConnectionState.waiting)
-              const SizedBox(
-                height: 14,
-                width: 14,
-                child: CircularProgressIndicator(color: _green, strokeWidth: 1.5),
-              )
-            else if (snap.hasData && snap.data!.suggestedPrice != null)
-              Text(
-                '\$${snap.data!.suggestedPrice!.toStringAsFixed(2)}',
-                style: const TextStyle(
-                  color: _green,
-                  fontSize: 15,
-                  fontWeight: FontWeight.bold,
-                ),
-              )
-            else
-              const Text('—', style: TextStyle(color: _textDim, fontSize: 13)),
-          ],
-        );
-      },
     );
   }
 }
@@ -471,25 +483,6 @@ class _Badge extends StatelessWidget {
           letterSpacing: 0.5,
         ),
       ),
-    );
-  }
-}
-
-class _IconBtn extends StatelessWidget {
-  final IconData icon;
-  const _IconBtn({required this.icon});
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      width: 42,
-      height: 42,
-      decoration: BoxDecoration(
-        border: Border.all(color: _cardBorder, width: 1.5),
-        borderRadius: BorderRadius.circular(12),
-        color: _cardBg,
-      ),
-      child: Icon(icon, color: _green, size: 20),
     );
   }
 }

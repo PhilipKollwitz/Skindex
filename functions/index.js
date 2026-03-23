@@ -346,8 +346,14 @@ exports.skinportMarket = onRequest(async (req, res) => {
 
   const items = cacheEntry.items;
 
+  // Skinport liefert ein "image"-Feld pro Item (relativer Steam-Pfad oder volle URL)
+  const iconMap = {};
+  for (const i of items) {
+    if (i.image) iconMap[i.market_hash_name] = i.image;
+  }
+
   // Deals: min_price deutlich unter suggested_price
-  const rawDeals = items
+  const deals = items
     .filter((i) => i.min_price != null && i.suggested_price > 1 && i.quantity > 0)
     .map((i) => ({
       market_hash_name: i.market_hash_name,
@@ -355,6 +361,7 @@ exports.skinportMarket = onRequest(async (req, res) => {
       suggested_price: i.suggested_price,
       quantity: i.quantity,
       discount_pct: Math.round((1 - i.min_price / i.suggested_price) * 100),
+      icon_url: iconMap[i.market_hash_name] ?? null,
       item_page: i.item_page || null,
       updated_at: i.updated_at || null,
     }))
@@ -362,44 +369,9 @@ exports.skinportMarket = onRequest(async (req, res) => {
     .sort((a, b) => b.discount_pct - a.discount_pct)
     .slice(0, 25);
 
-  // Trending: hochwertige Items sortiert nach Preis
-  const rawTrending = items
-    .filter((i) => i.suggested_price > 50 && i.quantity > 0)
-    .sort((a, b) => b.suggested_price - a.suggested_price)
-    .slice(0, 15)
-    .map((i) => ({
-      market_hash_name: i.market_hash_name,
-      suggested_price: i.suggested_price,
-      min_price: i.min_price ?? null,
-      discount_pct: i.min_price
-        ? Math.round((1 - i.min_price / i.suggested_price) * 100)
-        : 0,
-      quantity: i.quantity,
-      item_page: i.item_page || null,
-    }));
-
-  // Icons holen: zuerst alle aus Firestore/Memory-Cache, Steam nur für unbekannte
-  const allNames = [
-    ...new Set([
-      ...rawDeals.map((i) => i.market_hash_name),
-      ...rawTrending.map((i) => i.market_hash_name),
-    ]),
-  ];
-  const uncached = allNames.filter((n) => imageCache[n] === undefined);
-  // Zuerst alle gecachten aus Firestore laden (parallel, kein Rate-Limit)
-  await Promise.allSettled(uncached.map((n) => fetchSteamIconUrl(n)));
-  // Für noch immer unbekannte: Steam sequenziell mit Pause
-  const stillMissing = allNames.filter((n) => imageCache[n] === undefined);
-  for (const n of stillMissing) {
-    await fetchSteamIconUrl(n);
-    await new Promise((r) => setTimeout(r, 300));
-  }
-
-  const enrich = (i) => ({ ...i, icon_url: imageCache[i.market_hash_name] ?? null });
-
   res.json({
-    deals: rawDeals.map(enrich),
-    trending: rawTrending.map(enrich),
+    deals,
+    trending: [],
     fetched_at: now,
   });
 });
