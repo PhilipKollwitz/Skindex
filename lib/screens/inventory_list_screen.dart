@@ -180,11 +180,6 @@ class _InventoryListScreenState extends State<InventoryListScreen> {
                   ),
                 ),
                 _IconBtn(
-                  icon: Icons.tune_rounded,
-                  onTap: () {}, // Filter – folgt
-                ),
-                const SizedBox(width: 8),
-                _IconBtn(
                   icon: Icons.search_rounded,
                   onTap: () => setState(() {
                     _showSearch = !_showSearch;
