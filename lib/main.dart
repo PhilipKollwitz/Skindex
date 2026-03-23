@@ -15,6 +15,10 @@ void main() async {
   await Firebase.initializeApp(
     options: DefaultFirebaseOptions.currentPlatform,
   );
+  // Redirect-Result nach Google-Login verarbeiten
+  try {
+    await FirebaseAuth.instance.getRedirectResult();
+  } catch (_) {}
   runApp(const MyApp());
 }
 
