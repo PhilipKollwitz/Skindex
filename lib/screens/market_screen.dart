@@ -24,7 +24,6 @@ class MarketScreen extends StatefulWidget {
 
 class _MarketScreenState extends State<MarketScreen> {
   List<MarketDeal> _deals = [];
-  List<MarketTrend> _trending = [];
   bool _loading = true;
   String? _error;
 
@@ -44,7 +43,6 @@ class _MarketScreenState extends State<MarketScreen> {
       if (mounted) {
         setState(() {
           _deals = data.deals;
-          _trending = data.trending;
           _loading = false;
         });
       }
@@ -80,7 +78,6 @@ class _MarketScreenState extends State<MarketScreen> {
                           child: ListView(
                             padding: const EdgeInsets.only(bottom: 24),
                             children: [
-                              _buildMarktTrends(),
                               _buildLiveAngebote(),
                             ],
                           ),
@@ -154,54 +151,6 @@ class _MarketScreenState extends State<MarketScreen> {
     );
   }
 
-  // ── Markt-Trends ──────────────────────────────────────────────────────────
-
-  Widget _buildMarktTrends() {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Padding(
-          padding: const EdgeInsets.fromLTRB(16, 16, 16, 12),
-          child: Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              Row(children: [
-                const Icon(Icons.trending_up, color: _green, size: 18),
-                const SizedBox(width: 8),
-                const Text(
-                  'Markt-Trends',
-                  style: TextStyle(
-                      color: Colors.white,
-                      fontSize: 16,
-                      fontWeight: FontWeight.bold),
-                ),
-              ]),
-              const Text(
-                'ALLE ANSEHEN',
-                style: TextStyle(
-                    color: _green, fontSize: 11, letterSpacing: 0.5),
-              ),
-            ],
-          ),
-        ),
-        SizedBox(
-          height: 162,
-          child: _trending.isEmpty
-              ? const Center(
-                  child: Text('Keine Daten',
-                      style: TextStyle(color: _textDim)))
-              : ListView.builder(
-                  scrollDirection: Axis.horizontal,
-                  padding: const EdgeInsets.symmetric(horizontal: 16),
-                  itemCount: _trending.length,
-                  itemBuilder: (_, i) => _TrendCard(item: _trending[i], currency: widget.currency),
-                ),
-        ),
-      ],
-    );
-  }
-
-
   // ── Live-Angebote ─────────────────────────────────────────────────────────
 
   Widget _buildLiveAngebote() {
@@ -256,125 +205,6 @@ class _MarketScreenState extends State<MarketScreen> {
     );
   }
 
-}
-
-// ─────────────────────────────────────────
-// Trend Card (horizontal scroll)
-// ─────────────────────────────────────────
-class _TrendCard extends StatelessWidget {
-  final MarketTrend item;
-  final String currency;
-  const _TrendCard({required this.item, required this.currency});
-
-  @override
-  Widget build(BuildContext context) {
-    // discountPct > 0 → min_price liegt UNTER suggested → Preis gefallen
-    final fell = item.discountPct > 2;
-    final pctLabel = '${item.discountPct.abs()}%';
-
-    return Container(
-      width: 150,
-      margin: const EdgeInsets.only(right: 12),
-      decoration: BoxDecoration(
-        color: _cardBg,
-        border: Border.all(color: _cardBorder),
-        borderRadius: BorderRadius.circular(12),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          // Bild
-          ClipRRect(
-            borderRadius:
-                const BorderRadius.vertical(top: Radius.circular(12)),
-            child: SizedBox(
-              height: 80,
-              width: double.infinity,
-              child: item.iconUrl != null
-                  ? Image.network(
-                      MarketApi.proxyImageUrl(item.iconUrl!),
-                      fit: BoxFit.contain,
-                      errorBuilder: (_, _, _) => _imgPlaceholder(),
-                    )
-                  : _imgPlaceholder(),
-            ),
-          ),
-          Padding(
-            padding: const EdgeInsets.all(8),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  _shortName(item.marketHashName),
-                  style: const TextStyle(
-                      color: Colors.white,
-                      fontWeight: FontWeight.w600,
-                      fontSize: 12),
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                ),
-                const SizedBox(height: 6),
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                  children: [
-                    // % Badge
-                    Container(
-                      padding: const EdgeInsets.symmetric(
-                          horizontal: 5, vertical: 2),
-                      decoration: BoxDecoration(
-                        color: fell
-                            ? const Color(0xFF450A0A)
-                            : const Color(0xFF14532D),
-                        borderRadius: BorderRadius.circular(4),
-                      ),
-                      child: Row(
-                        children: [
-                          Icon(
-                            fell
-                                ? Icons.arrow_downward
-                                : Icons.arrow_upward,
-                            size: 10,
-                            color: fell ? _red : _green,
-                          ),
-                          const SizedBox(width: 2),
-                          Text(
-                            pctLabel,
-                            style: TextStyle(
-                              color: fell ? _red : _green,
-                              fontSize: 10,
-                              fontWeight: FontWeight.bold,
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                    Text(
-                      '${currencySymbol(currency)}${item.suggestedPrice.toStringAsFixed(0)}',
-                      style: const TextStyle(
-                          color: Colors.white, fontSize: 11),
-                    ),
-                  ],
-                ),
-              ],
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _imgPlaceholder() => Container(
-        color: const Color(0xFF060E06),
-        child: const Center(
-          child: Icon(Icons.image_not_supported_outlined,
-              color: Color(0xFF1A3520), size: 28),
-        ),
-      );
-
-  String _shortName(String name) {
-    final idx = name.indexOf(' (');
-    return idx > 0 ? name.substring(0, idx) : name;
-  }
 }
 
 // ─────────────────────────────────────────

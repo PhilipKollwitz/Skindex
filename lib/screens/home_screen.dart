@@ -152,7 +152,7 @@ class _HomeScreenState extends State<HomeScreen> {
         onInventoryTap: () => setState(() => _index = 2),
         onMarketTap: () => setState(() => _index = 3),
       ),
-      const SearchScreen(),
+      SearchScreen(currency: _currency),
       _steamId != null
           ? InventoryListScreen(
               steamId: _steamId!,
