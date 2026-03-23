@@ -317,7 +317,7 @@ async function fetchSteamIconUrl(marketHashName) {
  * angereichert mit Steam-CDN-Bild-URLs.
  * Nutzt denselben 5-min-Cache wie /skinportPrice.
  */
-exports.skinportMarket = onRequest(async (req, res) => {
+exports.skinportMarket = onRequest({ maxInstances: 1 }, async (req, res) => {
   if (handleCors(req, res)) return;
   if (req.method !== "GET") { res.status(405).json({ error: "Use GET" }); return; }
 
@@ -403,7 +403,7 @@ exports.skinportMarket = onRequest(async (req, res) => {
  * Gibt Preise für mehrere Items auf einmal zurück (1 API-Call statt N).
  * Nutzt denselben 5-min-Cache wie /skinportPrice.
  */
-exports.skinportBulkPrices = onRequest(async (req, res) => {
+exports.skinportBulkPrices = onRequest({ maxInstances: 1 }, async (req, res) => {
   if (handleCors(req, res)) return;
   if (req.method !== "GET") { res.status(405).json({ error: "Use GET" }); return; }
 
