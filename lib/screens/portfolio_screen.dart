@@ -136,7 +136,9 @@ class _PortfolioScreenState extends State<PortfolioScreen> {
     final current = _currentTotal;
     final filtered = _filteredHistory;
 
-    return Container(
+    return DefaultTextStyle(
+      style: const TextStyle(decoration: TextDecoration.none),
+      child: Container(
       color: _bg,
       child: Column(
         children: [
@@ -345,7 +347,7 @@ class _PortfolioScreenState extends State<PortfolioScreen> {
           ),
         ],
       ),
-    );
+    ));
   }
 
   String _fmtDate(DateTime dt) {
@@ -378,19 +380,32 @@ class _PortfolioScreenState extends State<PortfolioScreen> {
               reservedSize: 28,
               interval: lastIdx > 0 ? lastIdx : 1,
               getTitlesWidget: (value, meta) {
-                String label = '';
                 if (value == 0) {
-                  label = _fmtDate(data.first.timestamp);
+                  return Align(
+                    alignment: Alignment.centerLeft,
+                    child: Padding(
+                      padding: const EdgeInsets.only(top: 4),
+                      child: Text(_fmtDate(data.first.timestamp),
+                          style: const TextStyle(
+                              color: _textDim,
+                              fontSize: 10,
+                              decoration: TextDecoration.none)),
+                    ),
+                  );
                 } else if (value == lastIdx) {
-                  label = _fmtDate(data.last.timestamp);
-                } else {
-                  return const SizedBox.shrink();
+                  return Align(
+                    alignment: Alignment.centerRight,
+                    child: Padding(
+                      padding: const EdgeInsets.only(top: 4),
+                      child: Text(_fmtDate(data.last.timestamp),
+                          style: const TextStyle(
+                              color: _textDim,
+                              fontSize: 10,
+                              decoration: TextDecoration.none)),
+                    ),
+                  );
                 }
-                return Padding(
-                  padding: const EdgeInsets.only(top: 4),
-                  child: Text(label,
-                      style: const TextStyle(color: _textDim, fontSize: 10)),
-                );
+                return const SizedBox.shrink();
               },
             ),
           ),
