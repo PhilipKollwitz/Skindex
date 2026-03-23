@@ -157,10 +157,11 @@ class _HomeScreenState extends State<HomeScreen> {
           ? InventoryListScreen(
               steamId: _steamId!,
               items: _inventoryItems,
+              currency: _currency,
               onBack: () => setState(() => _index = 0),
             )
           : InventorySetupScreen(onInventoryLoaded: _onInventoryLoaded),
-      const MarketScreen(),
+      MarketScreen(currency: _currency),
       ProfileScreen(
         steamId: _steamId,
         currency: _currency,
