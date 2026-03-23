@@ -366,34 +366,15 @@ exports.skinportMarket = onRequest({ maxInstances: 1 }, async (req, res) => {
   if (req.method !== "GET") { res.status(405).json({ error: "Use GET" }); return; }
 
   const currency = (req.query.currency || "EUR").toUpperCase();
-  const now = Date.now();
-  let cacheEntry = skinportCache[currency];
 
-  if (!cacheEntry || now - cacheEntry.ts > SKINPORT_CACHE_MS) {
-    try {
-      const params = new URLSearchParams({ app_id: "730", currency });
-      const apiResp = await axios.get(
-        `https://api.skinport.com/v1/items?${params.toString()}`,
-        {
-          timeout: 15000,
-          headers: {
-            "Accept-Encoding": "br, gzip, deflate",
-            "User-Agent": "Mozilla/5.0 (compatible; Skindex/1.0)",
-          },
-          decompress: true,
-        }
-      );
-      const items = Array.isArray(apiResp.data) ? apiResp.data : [];
-      cacheEntry = { ts: now, items };
-      skinportCache[currency] = cacheEntry;
-    } catch (err) {
-      logger.error("skinportMarket fetch error", err.message);
-      res.status(500).json({ error: "Skinport fetch failed" });
-      return;
-    }
+  let items;
+  try {
+    items = await getSkinportItems(currency);
+  } catch (err) {
+    logger.error("skinportMarket fetch error", err.message);
+    res.status(500).json({ error: "Skinport fetch failed" });
+    return;
   }
-
-  const items = cacheEntry.items;
 
   // Deals: min_price deutlich unter suggested_price
   const rawDeals = items
@@ -437,7 +418,7 @@ exports.skinportMarket = onRequest({ maxInstances: 1 }, async (req, res) => {
   res.json({
     deals,
     trending: [],
-    fetched_at: now,
+    fetched_at: Date.now(),
   });
 });
 
@@ -459,36 +440,18 @@ exports.skinportBulkPrices = onRequest({ maxInstances: 1 }, async (req, res) => 
   }
   const hashes = hashesParam.split(",").map((h) => h.trim()).filter(Boolean);
 
-  const now = Date.now();
-  let cacheEntry = skinportCache[currency];
-
-  if (!cacheEntry || now - cacheEntry.ts > SKINPORT_CACHE_MS) {
-    try {
-      const params = new URLSearchParams({ app_id: "730", currency });
-      const apiResp = await axios.get(
-        `https://api.skinport.com/v1/items?${params.toString()}`,
-        {
-          timeout: 15000,
-          headers: {
-            "Accept-Encoding": "br, gzip, deflate",
-            "User-Agent": "Mozilla/5.0 (compatible; Skindex/1.0)",
-          },
-          decompress: true,
-        }
-      );
-      const items = Array.isArray(apiResp.data) ? apiResp.data : [];
-      cacheEntry = { ts: now, items };
-      skinportCache[currency] = cacheEntry;
-    } catch (err) {
-      logger.error("skinportBulkPrices fetch error", err.message);
-      res.status(500).json({ error: "Skinport fetch failed" });
-      return;
-    }
+  let allItems;
+  try {
+    allItems = await getSkinportItems(currency);
+  } catch (err) {
+    logger.error("skinportBulkPrices fetch error", err.message);
+    res.status(500).json({ error: "Skinport fetch failed" });
+    return;
   }
 
   // Index aufbauen für O(1) Lookup
   const index = {};
-  for (const item of cacheEntry.items) {
+  for (const item of allItems) {
     if (item.market_hash_name) index[item.market_hash_name] = item;
   }
 
